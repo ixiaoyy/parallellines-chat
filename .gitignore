@@ -1,0 +1,17 @@
+.env
+*.env
+!.env.example
+!*.env.example
+.private/
+secrets/
+data/
+logs/
+*.log
+*.db
+*.sqlite*
+*.pem
+*.key
+*.jwks.json
+node_modules/
+.build/
+dist/

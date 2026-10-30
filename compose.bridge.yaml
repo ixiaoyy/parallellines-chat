@@ -1,0 +1,37 @@
+# Reference service definition to integrate into the EXISTING issuer deployment.
+# Do not start a second issuer using the same SQLite directory or signing keys.
+services:
+  identity:
+    build:
+      context: ./identity-bridge
+    image: parallellines-identity:${BRIDGE_RELEASE:?Set a reviewed source commit tag}
+    env_file:
+      - ${BRIDGE_SECRETS_ENV:?Set existing server-only issuer env path}
+    environment:
+      PUBLIC_MAIN_ORIGIN: https://pingxingxian.space
+      PUBLIC_ISSUER: https://pingxingxian.space/auth/oidc
+      MAIN_BACKEND_URL: https://pingxingxian.space/api/v1
+      OIDC_DATABASE_PATH: /data/oidc.sqlite
+    volumes:
+      - type: bind
+        source: ${BRIDGE_DATA_DIR:?Preserve the existing issuer database directory}
+        target: /data
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${BRIDGE_SIGNING_JWKS:?Preserve the existing restricted signing key file}
+        target: /run/secrets/signing.jwks.json
+        read_only: true
+        bind:
+          create_host_path: false
+    networks: [edge]
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+networks:
+  edge:
+    external: true
+    name: ${EDGE_NETWORK:?Set the existing reverse-proxy network}

@@ -1,0 +1,11 @@
+node_modules
+test
+.env
+.env.*
+data
+*.sqlite
+*.sqlite-*
+*.db
+*.jwks.json
+verification.json
+.git
