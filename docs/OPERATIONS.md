@@ -98,6 +98,25 @@ all three existing files in order, including the session-release file;
 `candidate_env_files` may be empty when no Compose interpolation file is used.
 The script never reads their contents or creates credentials.
 
+If the known main-repository checkout reverted the two host bridge modules while
+the approved recovery image is still running, the optional
+`restore_from_verified_runtime=true` handles only the two explicitly recorded
+stale hashes. It verifies complete source bytes from the running approved image,
+backs up stale files, then restores the verified files in place without restarting
+a service. An independent receipt records that repair before ordinary deployment
+continues. Unknown drift, changed runtime contents, or Compose drift still stops
+the release. Keep this option false for normal deployments.
+
+For the separately verified Compose checkout reset, also provide the optional
+`restore_compose_backup` path to the existing pre-recovery Compose backup. That
+backup must identify the `sso-clients-20261030` image and its one existing
+`/data/.../bridge-clients.env` file with mode 0600. The script derives the known
+running Compose by changing only its image to `sso-recovery-20261030`. The current
+disk Compose must match it semantically except for the exact reviewed release
+interpolation and missing env-file entry. Any other difference stops before
+reconciliation writes. Source and Compose repair share one backup/rollback
+transaction; env-file contents are never read.
+
 The script locks old/new source hashes, checks current images, builds from the
 existing bridge image with only two replacement modules, and backs up the live
 modules and both changed Compose files. It updates files in place to preserve

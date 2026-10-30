@@ -26,6 +26,10 @@ NEW_SOURCE = {
     "config.mjs": "9816678de28ab12ae50965a3eeaee47b3e2b1a2af0f549db795e001426830ff1",
     "identity-provider.mjs": "28f2ae21bbc9c8d394dc77dd9a263dd332c846ec31c9b0f93fbe72c11fcb9285",
 }
+KNOWN_STALE_SOURCE = {
+    "config.mjs": "d6a509a1d10090d285d75073a799cc7398301aa9e2ed4f6ad8f6bf2f68ff9167",
+    "identity-provider.mjs": "46b3b3b459373abe791cc6370462a3d7c51eb3d181c248f3727edc15eef9e80c",
+}
 REFRESH_ENV = {
     "OAUTH_SCOPES": "openid profile offline_access",
     "OAUTH_AUTHORIZE_PARAMS": '{"prompt":"consent"}',
@@ -49,7 +53,12 @@ def digest(data):
 def load_scope(filename):
     scope = json.loads(Path(filename).read_text(encoding="utf-8"))
     required = set(PATH_KEYS + NAME_KEYS) | {"bridge_env_files", "candidate_env_files"}
-    check(set(scope) == required, "Scope keys do not match the documented schema")
+    optional = {"restore_from_verified_runtime", "restore_compose_backup"}
+    check(required <= set(scope) <= required | optional, "Scope keys do not match the documented schema")
+    check(type(scope.get("restore_from_verified_runtime", False)) is bool, "Runtime restore flag must be boolean")
+    if "restore_compose_backup" in scope:
+        check(scope.get("restore_from_verified_runtime") is True, "Compose restore requires explicit runtime reconciliation")
+        scope["restore_compose_backup"] = safe_path(scope["restore_compose_backup"], file=True)
     for key in NAME_KEYS:
         check(isinstance(scope[key], str) and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.:/@-]*", scope[key]), "Unsafe name: " + key)
     check(scope["expected_bridge_image"].endswith(":sso-recovery-20261030"), "Unexpected bridge release")
@@ -119,6 +128,7 @@ class Deployer:
     def __init__(self, scope):
         self.s = scope
         self.run_dir = None
+        self.reconciliation_receipt = None
 
     def run(self, args, timeout=180):
         result = subprocess.run([str(arg) for arg in args], capture_output=True, timeout=timeout)
@@ -153,6 +163,85 @@ class Deployer:
         self.compose(target, "up", "-d", "--no-deps", "--no-build", "--pull", "never", service)
         self.healthy(self.s["bridge_container" if target == "bridge" else "ow_container"])
 
+    def reconcile_known_stale_source(self):
+        """Opt-in repair of reviewed source/Compose checkout drift; no restart."""
+        s = self.s
+        if not s.get("restore_from_verified_runtime", False):
+            return
+        for name in CHANGED:
+            source = safe_path(str(s["source_dir"] / name), file=True)
+            check(digest(source.read_bytes()) == NEW_SOURCE[name], "Unreviewed release source: " + name)
+        disk = {safe_path(str(s["provider_dir"] / name), file=True): (s["provider_dir"] / name).read_bytes() for name in CHANGED}
+        if all(digest(data) == EXPECTED_SOURCE[path.name] for path, data in disk.items()):
+            disk = {}
+        else:
+            check(all(digest(data) == KNOWN_STALE_SOURCE[path.name] for path, data in disk.items()),
+                  "Runtime restore accepts only the two reviewed stale source hashes")
+        runtime = {}
+        for path in disk:
+            data = self.run(["docker", "exec", s["bridge_container"], "node", "-e",
+                "process.stdout.write(require('node:fs').readFileSync('/app/" + path.name + "'))"]).encode("utf-8")
+            check(digest(data) == EXPECTED_SOURCE[path.name], "Runtime source content is not the approved release")
+            runtime[path] = data
+        if "restore_compose_backup" in s:
+            backup_text = safe_path(str(s["restore_compose_backup"]), file=True).read_text(encoding="utf-8")
+            backup_doc = yaml.safe_load(backup_text)
+            backup_service = backup_doc.get("services", {}).get(s["bridge_service"], {})
+            previous_image = s["expected_bridge_image"].removesuffix(":sso-recovery-20261030") + ":sso-clients-20261030"
+            check(backup_service.get("image") == previous_image, "Backup is not the approved pre-recovery Compose")
+            envfiles = backup_service.get("env_file")
+            check(isinstance(envfiles, list) and len(envfiles) == 1, "Backup must retain the one existing client env file")
+            client_env = safe_path(envfiles[0], file=True)
+            check(client_env.is_relative_to(Path("/data")) and client_env.name == "bridge-clients.env", "Client env file must stay on /data")
+            check(client_env.stat().st_mode & 0o777 == 0o600, "Client env file must be mode 0600")
+            desired_text = patch_service(backup_text, s["bridge_service"], lambda service: service.update(image=s["expected_bridge_image"]))
+            desired = yaml.safe_load(desired_text)
+            current_bytes = s["bridge_compose"].read_bytes()
+            current = yaml.safe_load(current_bytes)
+            if current != desired:
+                reset_image = s["expected_bridge_image"].removesuffix(":sso-recovery-20261030") + ":${CHAT_SSO_RELEASE:?Set release commit}"
+                current_service = current.get("services", {}).get(s["bridge_service"], {})
+                check(current_service.get("image") == reset_image and "env_file" not in current_service, "Compose is not the reviewed checkout reset")
+                normalized = copy.deepcopy(current)
+                normalized["services"][s["bridge_service"]]["image"] = s["expected_bridge_image"]
+                normalized["services"][s["bridge_service"]]["env_file"] = envfiles
+                check(normalized == desired, "Compose differs beyond the approved image/env_file reset")
+                disk[s["bridge_compose"]] = current_bytes
+                runtime[s["bridge_compose"]] = desired_text.encode("utf-8")
+        if not disk:
+            return
+        check(self.image(s["bridge_container"]) == s["expected_bridge_image"], "Runtime image changed before reconciliation")
+        s["receipt_dir"].mkdir(parents=True, exist_ok=True, mode=0o700)
+        check(s["receipt_dir"].stat().st_mode & 0o077 == 0, "Receipt directory must be private")
+        directory = s["receipt_dir"] / ("verified-runtime-source-" + datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%S%fZ"))
+        directory.mkdir(mode=0o700)
+        for path, data in disk.items():
+            (directory / path.name).write_bytes(data)
+        self.reconciliation_receipt = directory / "receipt.json"
+        report = {"success": False, "services_restarted": False, "bridge_image": s["expected_bridge_image"],
+                  "backup": str(directory), "old_disk_sha256": {path.name: digest(data) for path, data in disk.items()},
+                  "verified_restore_sha256": {path.name: digest(data) for path, data in runtime.items()}}
+        self.reconciliation_receipt.write_text(json.dumps(report, indent=2), encoding="utf-8")
+        touched = []
+        try:
+            check(all(path.read_bytes() == data for path, data in disk.items()), "Disk source changed during reconciliation")
+            for path, data in runtime.items():
+                touched.append(path)
+                write_in_place(path, data)
+            check(all(path.read_bytes() == data for path, data in runtime.items()), "Runtime source restoration mismatch")
+        except Exception:
+            restored = True
+            for path in reversed(touched):
+                try:
+                    write_in_place(path, disk[path])
+                except Exception:
+                    restored = False
+            report["stale_disk_restored"] = restored
+            self.reconciliation_receipt.write_text(json.dumps(report, indent=2), encoding="utf-8")
+            raise RuntimeError("Source reconciliation failed; no service restarted; see " + str(self.reconciliation_receipt)) from None
+        report["success"] = True
+        self.reconciliation_receipt.write_text(json.dumps(report, indent=2), encoding="utf-8")
+
     def deploy(self):
         s = self.s
         check(self.run(["findmnt", "-n", "-o", "TARGET", "/data"]).strip() == "/data", "/data mount missing")
@@ -164,6 +253,7 @@ class Deployer:
         # Refuse replacing an existing release tag; it must remain available for rollback.
         images = self.run(["docker", "image", "ls", "--quiet", s["new_bridge_image"]]).strip()
         check(not images, "New image tag already exists; inspect previous attempt")
+        self.reconcile_known_stale_source()
         originals = {}
         release = {}
         for name in CHANGED:
@@ -259,7 +349,8 @@ class Deployer:
                   "backup": str(backup), "bridge_image": s["new_bridge_image"], "chat_image": s["expected_ow_image"],
                   "changed_services": [s["bridge_service"], s["ow_service"]], "source_sha256": NEW_SOURCE,
                   "secrets_changed": False, "roles_changed": False, "newapi_changed": False,
-                  "fresh_chat_login_required": True}
+                  "fresh_chat_login_required": True,
+                  "runtime_source_reconciliation": str(self.reconciliation_receipt) if self.reconciliation_receipt else None}
         receipt.write_text(json.dumps(result, indent=2), encoding="utf-8")
         print(json.dumps(result))
 

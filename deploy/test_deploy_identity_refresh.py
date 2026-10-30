@@ -18,6 +18,7 @@ class FakeDeployer(release.Deployer):
         self.commands = []
         self.current_bridge = scope["expected_bridge_image"]
         self.fail_chat = fail_chat
+        self.runtime_sources = {name: ("// old " + name).encode() for name in release.CHANGED}
 
     def run(self, args, timeout=180):
         args = list(map(str, args))
@@ -33,7 +34,8 @@ class FakeDeployer(release.Deployer):
             return "sha256:" + "a" * 64
         if args[:2] == ["docker", "exec"]:
             name = next(name for name in release.CHANGED if name in args[-1])
-            return release.EXPECTED_SOURCE[name]
+            return (release.digest(self.runtime_sources[name]) if "createHash" in args[-1]
+                    else self.runtime_sources[name].decode("utf-8"))
         if args[:2] == ["docker", "compose"] and "up" in args and args[-1] == s["bridge_service"]:
             self.current_bridge = release.yaml.safe_load(s["bridge_compose"].read_text())["services"][s["bridge_service"]]["image"]
         return ""
@@ -70,9 +72,11 @@ class DeployTests(unittest.TestCase):
         patch.dict(release.EXPECTED_SOURCE, old).start()
         patch.dict(release.NEW_SOURCE, new).start()
         original_check = release.check
-        # Windows cannot enforce POSIX mode bits; every other guard stays active.
+        # Fixtures stay in the OS temp directory rather than touching /data.
+        # Windows cannot enforce POSIX modes. All content/scope guards stay active.
         patch.object(release, "check", side_effect=lambda condition, reason: original_check(
-            condition or (os.name == "nt" and reason == "Receipt directory must be private"), reason)).start()
+            condition or reason == "Client env file must stay on /data" or
+            (os.name == "nt" and reason in {"Receipt directory must be private", "Client env file must be mode 0600"}), reason)).start()
         self.scope["base_compose"].write_text("services:\n  untouched-main:\n    image: keep\n")
         self.scope["bridge_compose"].write_text("services:\n  chat-oidc:\n    image: bridge:sso-recovery-20261030\n    env_file: [/restricted/runtime.env]\n")
         self.other_service = "  newapi:\n    image: api:do-not-touch\n    environment:\n      KeepValue: 'false'\n"
@@ -127,6 +131,114 @@ class DeployTests(unittest.TestCase):
         ups = [args for args in deployer.commands if args[:2] == ["docker", "compose"] and "up" in args]
         self.assertEqual(len(ups), 2)
         self.assertFalse(json.loads((deployer.run_dir / "failure.json").read_text())["rollback_healthy"])
+
+    def stale_fixture(self):
+        self.scope["restore_from_verified_runtime"] = True
+        stale = {self.scope["provider_dir"] / name: ("// reviewed stale " + name).encode() for name in release.CHANGED}
+        patch.dict(release.KNOWN_STALE_SOURCE, {path.name: release.digest(data) for path, data in stale.items()}).start()
+        for path, data in stale.items():
+            path.write_bytes(data)
+        return stale
+
+    def test_known_checkout_drift_requires_verified_runtime_and_keeps_independent_backup(self):
+        stale = self.stale_fixture()
+        deployer = FakeDeployer(self.scope)
+        deployer.deploy()
+        receipt = json.loads(deployer.reconciliation_receipt.read_text())
+        self.assertTrue(receipt["success"])
+        self.assertFalse(receipt["services_restarted"])
+        for path, before in stale.items():
+            self.assertEqual((deployer.reconciliation_receipt.parent / path.name).read_bytes(), before)
+            self.assertEqual(path.stat().st_ino, self.inodes[path])
+        ups = [args for args in deployer.commands if args[:2] == ["docker", "compose"] and "up" in args]
+        self.assertEqual([args[-1] for args in ups], ["chat-oidc", "openwebui"])
+
+    def test_runtime_reconciliation_rejects_unknown_disk_or_runtime_bytes(self):
+        stale = self.stale_fixture()
+        unknown = self.scope["provider_dir"] / "config.mjs"
+        unknown.write_text("not a reviewed checkout")
+        deployer = FakeDeployer(self.scope)
+        with self.assertRaisesRegex(RuntimeError, "only the two reviewed stale"):
+            deployer.reconcile_known_stale_source()
+        self.assertEqual(deployer.commands, [])
+        unknown.write_bytes(stale[unknown])
+        deployer.runtime_sources["config.mjs"] = b"unexpected running source"
+        with self.assertRaisesRegex(RuntimeError, "not the approved release"):
+            deployer.reconcile_known_stale_source()
+        for path, data in stale.items():
+            self.assertEqual(path.read_bytes(), data)
+        self.assertIsNone(deployer.reconciliation_receipt)
+
+    def test_runtime_reconciliation_write_failure_restores_stale_files_without_restart(self):
+        stale = self.stale_fixture()
+        deployer = FakeDeployer(self.scope)
+        original_write = release.write_in_place
+        def fail_second_write(path, data):
+            if path.name == "identity-provider.mjs" and data == deployer.runtime_sources[path.name]:
+                raise OSError("Synthetic source restore failure")
+            original_write(path, data)
+        with patch.object(release, "write_in_place", side_effect=fail_second_write):
+            with self.assertRaisesRegex(RuntimeError, "no service restarted"):
+                deployer.reconcile_known_stale_source()
+        for path, data in stale.items():
+            self.assertEqual(path.read_bytes(), data)
+        self.assertFalse(any(args[:2] == ["docker", "compose"] for args in deployer.commands))
+        self.assertTrue(json.loads(deployer.reconciliation_receipt.read_text())["stale_disk_restored"])
+
+    def compose_reset_fixture(self):
+        root = Path(self.temporary.name)
+        client_env = root / "bridge-clients.env"
+        client_env.write_text("SYNTHETIC=not-read\n")
+        client_env.chmod(0o600)
+        backup = release.yaml.safe_load(self.scope["bridge_compose"].read_text())
+        backup["services"]["chat-oidc"].update(image="bridge:sso-clients-20261030", env_file=[str(client_env)])
+        backup_path = root / "compose.before.yaml"
+        backup_path.write_text(release.yaml.safe_dump(backup, sort_keys=False))
+        self.scope["restore_compose_backup"] = backup_path
+        reset = release.copy.deepcopy(backup)
+        reset["services"]["chat-oidc"].update(image="bridge:${CHAT_SSO_RELEASE:?Set release commit}")
+        del reset["services"]["chat-oidc"]["env_file"]
+        self.scope["bridge_compose"].write_text(release.yaml.safe_dump(reset, sort_keys=False))
+        return self.scope["bridge_compose"].read_bytes(), str(client_env)
+
+    def test_verified_compose_reset_is_reconciled_without_changing_other_settings(self):
+        self.stale_fixture()
+        reset_bytes, client_env = self.compose_reset_fixture()
+        deployer = FakeDeployer(self.scope)
+        deployer.deploy()
+        doc = release.yaml.safe_load(self.scope["bridge_compose"].read_text())
+        self.assertEqual(doc["services"]["chat-oidc"], {"image": self.scope["new_bridge_image"], "env_file": [client_env]})
+        self.assertEqual((deployer.reconciliation_receipt.parent / self.scope["bridge_compose"].name).read_bytes(), reset_bytes)
+        self.assertEqual(self.scope["bridge_compose"].stat().st_ino, self.inodes[self.scope["bridge_compose"]])
+
+    def test_other_compose_drift_stops_before_reconciliation_writes(self):
+        stale = self.stale_fixture()
+        self.compose_reset_fixture()
+        current = release.yaml.safe_load(self.scope["bridge_compose"].read_text())
+        current["services"]["chat-oidc"]["privileged"] = True
+        self.scope["bridge_compose"].write_text(release.yaml.safe_dump(current))
+        deployer = FakeDeployer(self.scope)
+        with self.assertRaisesRegex(RuntimeError, "differs beyond"):
+            deployer.reconcile_known_stale_source()
+        self.assertIsNone(deployer.reconciliation_receipt)
+        for path, data in stale.items():
+            self.assertEqual(path.read_bytes(), data)
+
+    def test_compose_repair_failure_restores_both_source_files_and_reset_compose(self):
+        stale = self.stale_fixture()
+        reset_bytes, _ = self.compose_reset_fixture()
+        deployer = FakeDeployer(self.scope)
+        original_write = release.write_in_place
+        def fail_compose(path, data):
+            if path == self.scope["bridge_compose"] and data != reset_bytes:
+                raise OSError("Synthetic Compose repair failure")
+            original_write(path, data)
+        with patch.object(release, "write_in_place", side_effect=fail_compose):
+            with self.assertRaisesRegex(RuntimeError, "no service restarted"):
+                deployer.reconcile_known_stale_source()
+        for path, data in {**stale, self.scope["bridge_compose"]: reset_bytes}.items():
+            self.assertEqual(path.read_bytes(), data)
+        self.assertFalse(any(args[:2] == ["docker", "compose"] for args in deployer.commands))
 
 
 if __name__ == "__main__":
