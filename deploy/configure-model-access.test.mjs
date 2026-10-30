@@ -88,6 +88,18 @@ test('unsafe provider, global key and embedded Authorization are rejected before
   }
 });
 
+test('the observed disabled candidate URL is allowed only without credentials or connection config', async () => {
+  const state = fixture();
+  state.configs['/openai/config'].OPENAI_API_BASE_URLS = ['http://newapi:3000/v1'];
+  assert.equal((await configureModelAccess(input(), { fetchImpl: fakeFetch(state) })).ok, true);
+  for (const patch of [{ ENABLE_OPENAI_API: true }, { OPENAI_API_KEYS: ['private'] }, { OPENAI_API_CONFIGS: { '0': { enable: false } } }]) {
+    const unsafe = fixture();
+    Object.assign(unsafe.configs['/openai/config'], { OPENAI_API_BASE_URLS: ['http://newapi:3000/v1'] }, patch);
+    await assert.rejects(configureModelAccess(input(), { fetchImpl: fakeFetch(unsafe) }));
+    assert.equal(unsafe.calls.filter(c => c.method === 'POST').length, 0);
+  }
+});
+
 test('unsupported image engine is skipped only when all three flags are disabled', async () => {
   const state = fixture();
   Object.assign(state.configs['/api/v1/images/config'], { IMAGE_GENERATION_ENGINE: 'automatic1111', ENABLE_IMAGE_PROMPT_GENERATION: false });

@@ -57,7 +57,7 @@ function desiredOpenAI(current, check) {
   check(object(config), 'openai.schema');
   check(Object.keys(configs).length <= 1 && Object.keys(configs).every(key => key === '0' || key === url), 'openai.unapproved-provider');
   const isTarget = url === RELAY_BASE;
-  const emptyInitial = current.ENABLE_OPENAI_API === false && (urls.length === 0 || url === '' || url === 'https://api.openai.com/v1') && Object.keys(config).length === 0;
+  const emptyInitial = current.ENABLE_OPENAI_API === false && (urls.length === 0 || url === '' || url === 'https://api.openai.com/v1' || url === 'http://newapi:3000/v1') && Object.keys(config).length === 0;
   check(isTarget || emptyInitial, 'openai.unapproved-provider');
   if (isTarget) {
     check(config.auth_type === undefined || config.auth_type === 'system_oauth', 'openai.unapproved-auth');
