@@ -1,0 +1,54 @@
+{
+  "purpose": "Native model records and read access for the three explicitly approved upstream IDs; no service operations performed by this agent.",
+  "openwebui_version": "v0.12.5",
+  "openwebui_commit": "f7ac7ee10962ddec0017f5c29b6740d9b9c5faca",
+  "deployment_performed": false,
+  "authorized_ids": ["gpt-6-luna", "gpt-6.1-terra", "gpt-6.1-sol"],
+  "grant_to_add": {"principal_type": "user", "principal_id": "*", "permission": "read"},
+  "precheck": {
+    "method": "GET",
+    "route": "/api/v1/models/model?id=<exact-approved-id>",
+    "identity": "Existing native administrator session",
+    "on_404": "POST the corresponding payload below. The native access-update route creates the missing minimal base-model record before storing grants.",
+    "on_200": "Require id match, base_model_id == null and is_active == true. If the public read grant already exists, skip the write. Otherwise preserve existing grants and append the grant_to_add; POST that merged grant list. Existing name/meta/params/owner are untouched by access-update.",
+    "stop_conditions": ["Any non-200/non-404 result", "Existing record is a preset of another base_model_id", "Existing record is disabled", "Existing anyone grant or user:* write grant requires review; do not erase or silently accept wider access", "Unexpected ID or duplicate payload target"]
+  },
+  "write": {
+    "method": "POST",
+    "route": "/api/v1/models/model/access/update",
+    "required_fields": ["id", "access_grants"],
+    "optional_fields": ["name"],
+    "new_record_payloads": [
+      {"id": "gpt-6-luna", "name": "gpt-6-luna", "access_grants": [{"principal_type": "user", "principal_id": "*", "permission": "read"}]},
+      {"id": "gpt-6.1-terra", "name": "gpt-6.1-terra", "access_grants": [{"principal_type": "user", "principal_id": "*", "permission": "read"}]},
+      {"id": "gpt-6.1-sol", "name": "gpt-6.1-sol", "access_grants": [{"principal_type": "user", "principal_id": "*", "permission": "read"}]}
+    ],
+    "existing_record_semantics": "access_grants replaces the complete grant set; merge existing grants in memory before submission. name only supplies the name when this route creates a missing record. Do not use /sync or model-delete/recreate.",
+    "upstream_calls": "This route does not test the provider or call a model. A database record/grant alone does not prove inference or quota accounting.",
+    "partial_result_note": "If native record creation succeeds but grant validation/write fails, a private record may remain. Re-read the exact ID before any retry; do not delete it automatically."
+  },
+  "readback": {
+    "method": "GET",
+    "route": "/api/v1/models/model?id=<exact-approved-id>",
+    "assert": ["id matches requested approved ID", "base_model_id is null", "is_active is true", "user:* read grant exists", "no anyone grant was introduced", "no user:* write grant was introduced", "existing record fields and grants remain preserved"],
+    "safe_report_fields": ["id", "base_model_id", "is_active", "access_grants principal_type/principal_id/permission only"]
+  },
+  "normal_user_free_verification": {
+    "method": "GET",
+    "route": "/api/models?refresh=true",
+    "identity": "A legitimate normal OAuth user with a fresh provider-issued access/refresh token session",
+    "expected_ids": ["gpt-6-luna", "gpt-6.1-terra", "gpt-6.1-sol"],
+    "no_anonymous_access": "user:* is the public-to-logged-in-user grant. Do not use principal_type=anyone. The native list/chat endpoints require a verified user/admin session; pending and anonymous users do not pass that dependency.",
+    "no_billing_bypass": "Read grants only expose/use the model through native authorization. The NewAPI adapter independently requires the trusted mapped identity and enforces that user's balance on each billable call.",
+    "no_role_changes": true,
+    "no_global_model_access_bypass": true,
+    "no_paid_test": true
+  },
+  "sources": [
+    "https://github.com/open-webui/open-webui/blob/f7ac7ee10962ddec0017f5c29b6740d9b9c5faca/backend/open_webui/routers/models.py#L1125-L1193",
+    "https://github.com/open-webui/open-webui/blob/f7ac7ee10962ddec0017f5c29b6740d9b9c5faca/backend/open_webui/routers/models.py#L728-L772",
+    "https://github.com/open-webui/open-webui/blob/f7ac7ee10962ddec0017f5c29b6740d9b9c5faca/backend/open_webui/models/access_grants.py#L173-L207",
+    "https://github.com/open-webui/open-webui/blob/f7ac7ee10962ddec0017f5c29b6740d9b9c5faca/backend/open_webui/utils/models.py#L521-L572",
+    "https://github.com/open-webui/open-webui/blob/f7ac7ee10962ddec0017f5c29b6740d9b9c5faca/backend/open_webui/main.py#L872-L913"
+  ]
+}

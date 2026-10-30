@@ -1,0 +1,87 @@
+{
+  "purpose": "No-secret deployment input; root applies through native admin APIs after adapter deployment. This document is not itself an API request body.",
+  "openwebui_version": "v0.12.5",
+  "openwebui_commit": "f7ac7ee10962ddec0017f5c29b6740d9b9c5faca",
+  "deployment_performed": false,
+  "approved_upstream_base_url": "https://api.pingxingxian.space/oauth-relay/v1",
+  "expected_upstream_model_ids": ["gpt-6-luna", "gpt-6.1-terra", "gpt-6.1-sol"],
+  "startup_environment_overrides": {
+    "OAUTH_SCOPES": "openid profile offline_access",
+    "ENABLE_FORWARD_USER_INFO_HEADERS": "false",
+    "ENABLE_BASE_MODELS_CACHE": "false",
+    "ENABLE_IMAGE_GENERATION": "false",
+    "ENABLE_IMAGE_EDIT": "false",
+    "ENABLE_IMAGE_PROMPT_GENERATION": "false"
+  },
+  "native_configuration": [
+    {
+      "name": "openai_connection",
+      "get": "/openai/config",
+      "post": "/openai/config/update",
+      "mode": "Read current config in memory; confirm no existing configured providers or exactly this approved connection before replacing connection arrays. Preserve unrelated top-level fields. Stop if another provider is found.",
+      "required_fields": ["OPENAI_API_BASE_URLS", "OPENAI_API_KEYS", "OPENAI_API_CONFIGS"],
+      "patch": {
+        "ENABLE_OPENAI_API": true,
+        "OPENAI_API_BASE_URLS": ["https://api.pingxingxian.space/oauth-relay/v1"],
+        "OPENAI_API_KEYS": [""],
+        "OPENAI_API_CONFIGS": {
+          "0": {
+            "enable": true,
+            "auth_type": "system_oauth",
+            "connection_type": "external",
+            "forward_cookies": false,
+            "headers": {},
+            "model_ids": []
+          }
+        }
+      }
+    },
+    {
+      "name": "global_model_directory_cache",
+      "get": "/api/v1/configs/connections",
+      "post": "/api/v1/configs/connections",
+      "mode": "Read, merge patch into full response, POST full response; retain both direct-connection settings.",
+      "required_fields": ["ENABLE_DIRECT_CONNECTIONS", "ENABLE_BASE_MODELS_CACHE"],
+      "preserve_fields": ["ENABLE_DIRECT_CONNECTIONS", "ENABLE_DIRECT_INTEGRATIONS"],
+      "patch": {"ENABLE_BASE_MODELS_CACHE": false}
+    },
+    {
+      "name": "default_chat_model",
+      "get": "/api/v1/configs/models",
+      "post": "/api/v1/configs/models",
+      "mode": "Read, merge patch into full response, POST full response. Nullable required fields still need their keys; preserve optional metadata and params to avoid writing null.",
+      "required_fields": ["DEFAULT_MODELS", "DEFAULT_PINNED_MODELS", "MODEL_ORDER_LIST"],
+      "preserve_fields": ["DEFAULT_PINNED_MODELS", "MODEL_ORDER_LIST", "DEFAULT_MODEL_METADATA", "DEFAULT_MODEL_PARAMS"],
+      "patch": {"DEFAULT_MODELS": "gpt-6-luna"}
+    },
+    {
+      "name": "external_task_model",
+      "get": "/api/v1/tasks/config",
+      "post": "/api/v1/tasks/config/update",
+      "mode": "Read, merge patch into full response, POST full response. Preserve TASK_MODEL and all generation switches/prompts. Do not invoke title/completions during configuration verification.",
+      "required_fields": ["TASK_MODEL", "TASK_MODEL_EXTERNAL", "ENABLE_TITLE_GENERATION", "TITLE_GENERATION_PROMPT_TEMPLATE", "IMAGE_PROMPT_GENERATION_PROMPT_TEMPLATE", "ENABLE_AUTOCOMPLETE_GENERATION", "AUTOCOMPLETE_GENERATION_PROMPT_TEMPLATE", "TAGS_GENERATION_PROMPT_TEMPLATE", "FOLLOW_UP_GENERATION_PROMPT_TEMPLATE", "ENABLE_FOLLOW_UP_GENERATION", "ENABLE_TAGS_GENERATION", "ENABLE_SEARCH_QUERY_GENERATION", "ENABLE_RETRIEVAL_QUERY_GENERATION", "QUERY_GENERATION_PROMPT_TEMPLATE", "TOOLS_FUNCTION_CALLING_PROMPT_TEMPLATE", "ENABLE_VOICE_MODE_PROMPT", "VOICE_MODE_PROMPT_TEMPLATE"],
+      "preserve_fields": ["TASK_MODEL", "TASK_MODEL_PARAMS", "AUTOCOMPLETE_GENERATION_INPUT_MAX_LENGTH"],
+      "patch": {"TASK_MODEL_EXTERNAL": "gpt-6-luna"}
+    },
+    {
+      "name": "disable_dedicated_image_generation_and_edits",
+      "get": "/api/v1/images/config",
+      "post": "/api/v1/images/config/update",
+      "mode": "Read config only in memory, require IMAGE_GENERATION_ENGINE == openai for the reviewed no-upstream-call path, merge patch and POST full response. Never log or persist full responses. Stop for review if the engine differs.",
+      "required_fields": ["ENABLE_IMAGE_GENERATION", "ENABLE_IMAGE_PROMPT_GENERATION", "IMAGE_GENERATION_ENGINE", "IMAGE_GENERATION_MODEL", "IMAGE_SIZE", "IMAGE_STEPS", "IMAGES_OPENAI_API_BASE_URL", "IMAGES_OPENAI_API_KEY", "IMAGES_OPENAI_API_VERSION", "IMAGES_OPENAI_API_PARAMS", "AUTOMATIC1111_BASE_URL", "AUTOMATIC1111_API_AUTH", "AUTOMATIC1111_PARAMS", "COMFYUI_BASE_URL", "COMFYUI_API_KEY", "COMFYUI_WORKFLOW", "COMFYUI_WORKFLOW_NODES", "IMAGES_GEMINI_API_BASE_URL", "IMAGES_GEMINI_API_KEY", "IMAGES_GEMINI_ENDPOINT_METHOD", "ENABLE_IMAGE_EDIT", "IMAGE_EDIT_ENGINE", "IMAGE_EDIT_MODEL", "IMAGE_EDIT_SIZE", "IMAGES_EDIT_OPENAI_API_BASE_URL", "IMAGES_EDIT_OPENAI_API_KEY", "IMAGES_EDIT_OPENAI_API_VERSION", "IMAGES_EDIT_GEMINI_API_BASE_URL", "IMAGES_EDIT_GEMINI_API_KEY", "IMAGES_EDIT_COMFYUI_BASE_URL", "IMAGES_EDIT_COMFYUI_API_KEY", "IMAGES_EDIT_COMFYUI_WORKFLOW", "IMAGES_EDIT_COMFYUI_WORKFLOW_NODES"],
+      "patch": {"ENABLE_IMAGE_GENERATION": false, "ENABLE_IMAGE_EDIT": false, "ENABLE_IMAGE_PROMPT_GENERATION": false}
+    }
+  ],
+  "verification_contract": {
+    "config_save_identity": "Recovery admin native session may save config. That account has no main-site OAuth session and must not pass an upstream OAuth connection test.",
+    "free_authenticated_models_check": "After a fresh main-site OAuth login with offline_access, GET /api/models?refresh=true using that user's OWUI session; assert actual returned IDs and check native OWUI model visibility grants for a normal user.",
+    "free_upstream_anonymous_check": "GET https://api.pingxingxian.space/oauth-relay/v1/models without Authorization must fail with 401.",
+    "quota_behavior": "Adapter contract: authenticated bound users may list three models at zero quota; billable chat/completions and responses use native per-user balance rejection. No grant of quota is part of this template.",
+    "no_paid_verification": true,
+    "no_shared_key": true,
+    "no_manual_model_catalog": true,
+    "native_model_registration_plan": "Apply openwebui-native-model-records-plan.json for the three approved IDs and user:* read grants; v0.12.5 hides unregistered models from normal users. No global access-control bypass.",
+    "cache_limit": "Global base-model cache is disabled; native per-user OpenAI enumeration cache defaults to one second. Empty fetches may reuse BASE_MODELS. A visible model is not authorization to spend.",
+    "identity_coverage": "Source verified for model enumeration, chat/completions including streaming and image input, responses, and external task/title calls. No real model call has been tested by this agent. Dedicated image generation/edit remains disabled."
+  }
+}
