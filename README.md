@@ -1,7 +1,9 @@
 # ParallelLines Chat
 
 Deployment source for the official Open WebUI UI and the separate ParallelLines
-OIDC identity bridge. Open WebUI application code and branding are unchanged.
+OIDC identity bridge. Open WebUI UI and branding are unchanged. The optional
+profile overlay makes existing-account name/email updates fail clearly on
+conflicts and commit together; it does not change account identity or roles.
 
 The pinned application is **v0.12.5**, commit
 `f7ac7ee10962ddec0017f5c29b6740d9b9c5faca`; the exact official Linux amd64 image is
@@ -16,6 +18,8 @@ recorded in `upstream.lock.json`. Read [NOTICE.md](NOTICE.md) for component term
 - `compose.bridge.yaml`: integration reference for that existing issuer service.
 - `deploy/nginx-chat.conf`: additive vhost, including WebSocket and SSE support.
 - `docs/OPERATIONS.md`: account configuration, release, upgrade, and rollback.
+- `main-profile-overlay/`, `openwebui-profile-overlay/`: reviewed, hash-checked
+  profile synchronization patches. See [release contract](docs/profile-sync-release.md).
 
 Main-site credentials are entered only at the main site. Users select the
 **平行线账号** login button in Chat. Ordinary users default to `user`; administrator

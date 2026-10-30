@@ -2,7 +2,7 @@ FROM node:24.22.1-alpine@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
-COPY --chown=node:node config.mjs identity-provider.mjs main-bridge.mjs server.mjs sqlite-adapter.mjs error-page.mjs ./
+COPY --chown=node:node config.mjs identity-provider.mjs main-bridge.mjs main-profile.mjs server.mjs sqlite-adapter.mjs error-page.mjs ./
 RUN mkdir -p /data && chown node:node /data && chmod 0700 /data
 USER node
 ENV HOST=0.0.0.0 PORT=3002 OIDC_DATABASE_PATH=/data/oidc.sqlite NODE_ENV=production

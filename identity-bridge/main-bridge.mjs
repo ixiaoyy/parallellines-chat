@@ -18,6 +18,9 @@ export function validateIdentity(value, { bindingId, subject, requireName = fals
   return {
     sub: value.sub, binding_id: value.binding_id, auth_expires_at: value.auth_expires_at,
     ...(typeof value.name === 'string' ? { name: value.name } : {}),
+    ...(typeof value.username === 'string' ? { username: value.username } : {}),
+    email_verified: value.email_verified === true,
+    ...(value.email_verified === true && typeof value.email === 'string' ? { email: value.email } : {}),
   };
 }
 

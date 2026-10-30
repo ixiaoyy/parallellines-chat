@@ -1,6 +1,7 @@
 import Provider, { interactionPolicy, errors } from 'oidc-provider';
 import { createMainBridge, MainAuthorityError } from './main-bridge.mjs';
 import { renderLoginFailure } from './error-page.mjs';
+import { requireMainProfile } from './main-profile.mjs';
 
 export const CLIENT_ID = 'parallellines-chat';
 const now = () => Math.floor(Date.now() / 1000);
@@ -109,8 +110,8 @@ export function createIdentityProvider({ config, store, fetchImpl }) {
     features: { devInteractions: { enabled: false }, userinfo: { enabled: true } },
     // Pinned oidc-provider 9.13.2 accepts only S256; every registered client requires it.
     pkce: { required: () => true },
-    scopes: ['openid', 'profile', 'offline_access'],
-    claims: { openid: ['sub', 'pl_binding', 'pl_auth_exp', 'iss', 'aud'], profile: ['name', 'preferred_username'] },
+    scopes: ['openid', 'profile', 'email', 'offline_access'],
+    claims: { openid: ['sub', 'pl_binding', 'pl_auth_exp', 'iss', 'aud'], profile: ['name', 'preferred_username'], email: ['email', 'email_verified'] },
     // LibreChat's ID-token reuse path must receive the stable profile identifier too.
     conformIdTokenClaims: false,
     // Preserve legacy refresh behavior. Chat requires its native offline-access consent.
@@ -133,13 +134,17 @@ export function createIdentityProvider({ config, store, fetchImpl }) {
         identity = identityFor(ctx, token);
         if (identity.sub !== sub) return undefined;
         const state = await bridge.sessionState(identity);
-        const effective = { ...identity, auth_expires_at: Math.min(identity.auth_expires_at, state.auth_expires_at) };
+        const profileSync = clientsById.get(token?.clientId || ctx.oidc.client?.clientId)?.profileSyncEnabled === true;
+        const profile = profileSync ? requireMainProfile(state) : {};
+        const effective = { ...identity, ...profile, auth_expires_at: Math.min(identity.auth_expires_at, state.auth_expires_at) };
         if (effective.auth_expires_at <= now()) return undefined;
         ctx.state.plMainIdentity = effective;
         return {
           accountId: sub,
           claims: async use => {
-            const claims = { sub, preferred_username: 'pl-' + sub, name: identity.name,
+            const claims = { sub, preferred_username: profileSync ? profile.username : 'pl-' + sub,
+              name: profileSync ? profile.name : identity.name,
+              ...(profileSync ? { email: profile.email, email_verified: true } : {}),
               pl_binding: identity.binding_id, pl_auth_exp: effective.auth_expires_at };
             if (use !== 'userinfo') return claims;
             // UserInfo's token is the provider-validated AccessToken, never caller metadata.
@@ -199,8 +204,10 @@ export function createIdentityProvider({ config, store, fetchImpl }) {
         // Only fixed, registered application locations can be used for recovery.
         retryUrl = recoveryUrlFor(registered.clientId);
         const identity = await bridge.exchange({ interactionId: details.uid, approvalCode: input.approval_code });
+        if (registered.profileSyncEnabled) requireMainProfile(identity);
         const grant = new provider.Grant({ accountId: identity.sub, clientId: registered.clientId });
         const allowedScopes = registered.refreshEnabled ? ['openid', 'profile', 'offline_access'] : ['openid', 'profile'];
+        if (registered.profileSyncEnabled) allowedScopes.push('email');
         const requestedScopes = String(details.params.scope || '').split(' ').filter(scope => allowedScopes.includes(scope));
         grant.addOIDCScope(requestedScopes.join(' '));
         grantId = await grant.save(identity.auth_expires_at - now());

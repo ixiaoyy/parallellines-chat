@@ -1,0 +1,6 @@
+# Merge into the existing issuer project; keep its secrets, signing keys and SQLite.
+services:
+  identity:
+    image: ${BRIDGE_PROFILE_IMAGE:?Set the reviewed bridge image tag}
+    environment:
+      OIDC_MAIN_PROFILE_SYNC_ENABLED: "true"

@@ -33,6 +33,12 @@ test('production config fixes issuer/callback and requires private file rather t
       { clientId: 'parallellines-newapi', callbackUri: 'https://api.pingxingxian.space/oauth/pingxingxian', refreshEnabled: false },
     ]);
     assert.throws(() => loadConfiguration({ ...env, OPENWEBUI_OIDC_CLIENT_SECRET: env.CHAT_OIDC_CLIENT_SECRET }));
+    const profile = loadConfiguration({ ...env, OIDC_MAIN_PROFILE_SYNC_ENABLED: 'true',
+      OPENWEBUI_OIDC_CLIENT_SECRET: 'synthetic-openwebui-'.repeat(3),
+      NEWAPI_OAUTH_CLIENT_SECRET: 'synthetic-newapi-'.repeat(3) });
+    assert.equal(profile.clients[0].profileSyncEnabled, undefined);
+    assert.equal(profile.clients[1].profileSyncEnabled, true);
+    assert.equal(profile.clients[2].profileSyncEnabled, true);
     assert.throws(() => loadConfiguration({ ...env, NEWAPI_OAUTH_CLIENT_SECRET: 'short' }));
     assert.throws(() => loadConfiguration({ ...env, OPENWEBUI_OIDC_CLIENT_SECRET: 'same-secret-'.repeat(4), NEWAPI_OAUTH_CLIENT_SECRET: 'same-secret-'.repeat(4) }));
     for (const invalid of [

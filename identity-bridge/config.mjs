@@ -44,7 +44,8 @@ export function loadConfiguration(env = process.env) {
     if (typeof env[key] !== 'string' || env[key].length < 32 || clients.some(client => client.clientSecret === env[key])) {
       throw new Error('invalid_independent_client_secret');
     }
-    clients.push({ clientId, clientSecret: env[key], callbackUri, refreshEnabled: clientId === 'parallellines-openwebui' });
+    clients.push({ clientId, clientSecret: env[key], callbackUri, refreshEnabled: clientId === 'parallellines-openwebui',
+      profileSyncEnabled: env.OIDC_MAIN_PROFILE_SYNC_ENABLED === 'true' });
   }
   return Object.freeze({
     issuer: issuer.href.replace(/\/$/, ''), mainOrigin: main.origin,

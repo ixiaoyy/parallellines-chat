@@ -1,0 +1,15 @@
+# Merge only into the existing Chat project; this creates no new data or credentials.
+services:
+  openwebui:
+    image: ${CHAT_PROFILE_IMAGE:?Set the reviewed profile overlay image tag}
+    environment:
+      MAIN_OAUTH_PROFILE_SYNC_ENABLED: "true"
+      OAUTH_SCOPES: openid profile email offline_access
+      OAUTH_USERNAME_CLAIM: preferred_username
+      OAUTH_EMAIL_CLAIM: email
+      OAUTH_UPDATE_NAME_ON_LOGIN: "true"
+      OAUTH_UPDATE_EMAIL_ON_LOGIN: "true"
+      ENABLE_OAUTH_EMAIL_FALLBACK: "false"
+      OAUTH_MERGE_ACCOUNTS_BY_EMAIL: "false"
+      ENABLE_OAUTH_ROLE_MANAGEMENT: "false"
+      ENABLE_OAUTH_GROUP_MANAGEMENT: "false"

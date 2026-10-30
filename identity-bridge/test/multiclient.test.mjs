@@ -420,6 +420,44 @@ test('three clients: real OIDC protocol and persisted Main binding isolation', a
       await assertClaims(legacyTokens, unaffected);
     });
 
+    await t.test('opted-in clients receive current verified profile without changing identity or legacy claims', async () => {
+      clients[1].profileSyncEnabled = true;
+      clients[2].profileSyncEnabled = true;
+      try {
+        for (const client of clients.slice(1)) {
+          const flow = await begin(client, { scope: 'openid profile email' });
+          const approval = approve(flow, 'profile-sub');
+          Object.assign(approval.identity, { username: 'original-user', name: 'Original',
+            email: 'original@example.invalid', email_verified: true });
+          const callback = await callbackAfterFinish(flow, await finish(flow, approval.code));
+          const tokens = await exchange({ ...flow, callback });
+          assert.equal(tokens.claims().preferred_username, 'original-user');
+          assert.equal(tokens.claims().email, 'original@example.invalid');
+          states.set(approval.identity.binding_id, { ...approval.identity, username: 'current-user',
+            name: 'Current', email: 'current@example.invalid' });
+          const current = await fetch(userinfoEndpoint, { headers: { Authorization: `Bearer ${tokens.access_token}` } });
+          const value = await current.json();
+          assert.equal(value.sub, 'profile-sub');
+          assert.equal(value.preferred_username, 'current-user');
+          assert.equal(value.name, 'Current');
+          assert.equal(value.email, 'current@example.invalid');
+          assert.equal(value.email_verified, true);
+          assert.equal(value.role, undefined);
+          states.set(approval.identity.binding_id, { ...approval.identity, email_verified: false });
+          const rejected = await fetch(userinfoEndpoint, { headers: { Authorization: `Bearer ${tokens.access_token}` } });
+          assert.equal(rejected.status, 401);
+          assert.equal((await rejected.json()).email, undefined);
+        }
+        const legacy = await authorization(clients[0], 'legacy-profile-unchanged');
+        const legacyTokens = await exchange(legacy);
+        assert.equal(legacyTokens.claims().preferred_username, 'pl-legacy-profile-unchanged');
+        assert.equal(legacyTokens.claims().email, undefined);
+      } finally {
+        clients[1].profileSyncEnabled = false;
+        clients[2].profileSyncEnabled = false;
+      }
+    });
+
     await t.test('legacy refresh remains bound to its client and survives provider/store restart', async () => {
       const flow = await authorization(clients[0], 'legacy-restart-user');
       const tokens = await exchange(flow);
