@@ -10,10 +10,13 @@ USERS_SHA256 = '143e949b172252c45ae1cbe7d5f7bfc3460375fa49b203f4dbc36c6128d68bc3
 def patch(source):
     marker = 'from open_webui.models.users import Users\n'
     assert source.count(marker) == 1, 'unexpected OAuth imports'
-    source = source.replace(marker, marker + 'from open_webui.utils.main_profile_sync import enabled as main_profile_sync_enabled, sync_profile\n')
+    source = source.replace(marker, marker + 'from open_webui.utils.main_profile_sync import enabled as main_profile_sync_enabled, check_configuration as check_main_profile_configuration, sync_profile\n')
     marker = '            user = await Users.get_user_by_oauth_sub(provider, sub, db=db)\n'
     assert source.count(marker) == 1, 'unexpected OAuth subject lookup'
-    source = source.replace(marker, marker + '            main_profile_bound = user is not None and main_profile_sync_enabled(provider)\n')
+    source = source.replace(marker,
+        '            if main_profile_sync_enabled(provider):\n'
+        '                check_main_profile_configuration(auth_config)\n'
+        + marker + '            main_profile_bound = user is not None and main_profile_sync_enabled(provider)\n')
     start = source.index('                if auth_config.OAUTH_UPDATE_NAME_ON_LOGIN:\n', source.index('async def handle_callback'))
     end = source.index('                # Update profile picture if enabled', start)
     original = source[start:end]

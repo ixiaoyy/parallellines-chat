@@ -16,6 +16,9 @@ Conflicts and write failures become a generic HTTPException(409); the upstream
 callback renders that safe message via its existing `/auth?error=` redirect. The
 browser receives the standard login error page, not an HTTP 409 response body.
 Database errors and email values are not logged by the new helper.
+If saved runtime settings enable email merging or OAuth role/group management,
+the selected Main callback fails before those actions instead of changing identity
+or permissions. The release must still verify the intended native settings.
 
 Chat's visible name follows `preferred_username`. Open WebUI's optional custom
 handle field is unchanged; it is not an identity or lookup key. Existing sessions

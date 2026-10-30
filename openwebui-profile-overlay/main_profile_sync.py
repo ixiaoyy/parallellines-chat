@@ -10,6 +10,13 @@ def enabled(provider):
     return provider == 'oidc' and os.environ.get('MAIN_OAUTH_PROFILE_SYNC_ENABLED') == 'true'
 
 
+def check_configuration(auth_config):
+    if (auth_config.OAUTH_MERGE_ACCOUNTS_BY_EMAIL
+            or auth_config.ENABLE_OAUTH_ROLE_MANAGEMENT
+            or auth_config.ENABLE_OAUTH_GROUP_MANAGEMENT):
+        raise HTTPException(409, detail='主站资料同步配置需要管理员检查。')
+
+
 async def sync_profile(user, user_data, auth_config, users, db=None):
     changes = {}
     if auth_config.OAUTH_UPDATE_NAME_ON_LOGIN:

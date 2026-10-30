@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, patch as mock_patch
 from fastapi import HTTPException
 from sqlalchemy.exc import IntegrityError
 
-from main_profile_sync import enabled, sync_profile
+from main_profile_sync import enabled, check_configuration, sync_profile
 from apply import patch, OAUTH_SHA256, USERS_SHA256
 
 
@@ -79,6 +79,15 @@ class ProfileTests(unittest.IsolatedAsyncioTestCase):
         with mock_patch.dict(os.environ, {'MAIN_OAUTH_PROFILE_SYNC_ENABLED': 'false'}):
             self.assertFalse(enabled('oidc'))
 
+    def test_incompatible_runtime_config_fails_before_merge_or_role_update(self):
+        flags = dict(OAUTH_MERGE_ACCOUNTS_BY_EMAIL=False, ENABLE_OAUTH_ROLE_MANAGEMENT=False,
+            ENABLE_OAUTH_GROUP_MANAGEMENT=False)
+        check_configuration(SimpleNamespace(**flags))
+        for name in flags:
+            with self.assertRaises(HTTPException) as caught:
+                check_configuration(SimpleNamespace(**{**flags, name: True}))
+            self.assertEqual(caught.exception.status_code, 409)
+
     def test_exact_upstream_patch_compiles_and_keeps_merge_and_role_code(self):
         source_root = Path(__file__).parents[1] / '.build/openwebui-profile-baseline'
         source = (source_root / 'oauth.py').read_bytes()
@@ -90,6 +99,8 @@ class ProfileTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('main_profile_bound = user is not None and main_profile_sync_enabled(provider)', updated)
         self.assertEqual(updated.count('user = await Users.get_user_by_oauth_sub(provider, sub, db=db)'), 1)
         self.assertEqual(updated.count('if auth_config.OAUTH_MERGE_ACCOUNTS_BY_EMAIL:'), 1)
+        self.assertLess(updated.index('check_main_profile_configuration(auth_config)'),
+            updated.index('if auth_config.OAUTH_MERGE_ACCOUNTS_BY_EMAIL:'))
         tree = ast.parse(users.decode('utf-8'))
         table = next(x for x in tree.body if isinstance(x, ast.ClassDef) and x.name == 'UsersTable')
         method = next(x for x in table.body if isinstance(x, ast.AsyncFunctionDef) and x.name == 'update_user_by_id')
