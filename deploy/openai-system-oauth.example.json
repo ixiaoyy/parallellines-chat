@@ -1,0 +1,13 @@
+{
+  "ENABLE_OPENAI_API": false,
+  "OPENAI_API_BASE_URLS": ["https://api.pingxingxian.space/oauth-relay/v1"],
+  "OPENAI_API_KEYS": [""],
+  "OPENAI_API_CONFIGS": {
+    "0": {
+      "enable": true,
+      "auth_type": "system_oauth",
+      "headers": {},
+      "forward_cookies": false
+    }
+  }
+}

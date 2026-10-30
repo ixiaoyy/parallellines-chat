@@ -60,6 +60,7 @@ test('three clients: real OIDC protocol and persisted Main binding isolation', a
   const authorityCalls = [];
   let handler;
   let store;
+  let provider;
   let opServer;
   const mainServer = await serve(async (req, res) => {
     let raw = '';
@@ -86,7 +87,7 @@ test('three clients: real OIDC protocol and persisted Main binding isolation', a
     const issuer = `http://127.0.0.1:${opServer.address().port}/auth/oidc`;
     const clients = [
       { clientId: CLIENT_ID, clientSecret: secret(), callbackUri: `${mainOrigin}/chat/oauth/openid/callback`, refreshEnabled: true },
-      { clientId: 'parallellines-openwebui', clientSecret: secret(), callbackUri: `${mainOrigin}/oauth/oidc/login/callback`, refreshEnabled: false },
+      { clientId: 'parallellines-openwebui', clientSecret: secret(), callbackUri: `${mainOrigin}/oauth/oidc/login/callback`, refreshEnabled: true },
       { clientId: 'parallellines-newapi', clientSecret: secret(), callbackUri: `${mainOrigin}/oauth/pingxingxian`, refreshEnabled: false },
     ];
     const { privateKey, publicKey } = await generateKeyPair('RS256', { extractable: true });
@@ -100,7 +101,7 @@ test('three clients: real OIDC protocol and persisted Main binding isolation', a
     function restart() {
       store?.close();
       store = createSqliteStore({ directory, clientIds: clients.map(client => client.clientId) });
-      handler = createIdentityProvider({ config, store }).handler;
+      ({ provider, handler } = createIdentityProvider({ config, store }));
     }
     restart();
     const rps = new Map();
@@ -111,11 +112,14 @@ test('three clients: real OIDC protocol and persisted Main binding isolation', a
     }
     const endpoint = rps.get(CLIENT_ID).serverMetadata().token_endpoint;
     const userinfoEndpoint = rps.get(CLIENT_ID).serverMetadata().userinfo_endpoint;
+    assert.equal(userinfoEndpoint, `${issuer}/me`);
 
-    async function begin(client, { browser = new Browser(), pkce = 'S256', redirectUri = client.callbackUri } = {}) {
+    async function begin(client, { browser = new Browser(), pkce = 'S256', redirectUri = client.callbackUri,
+      scope = client.clientId === 'parallellines-openwebui' ? 'openid profile offline_access' : 'openid profile',
+      prompt = client.clientId === 'parallellines-openwebui' ? 'consent' : undefined } = {}) {
       const verifier = oidc.randomPKCECodeVerifier();
       const state = oidc.randomState(), nonce = oidc.randomNonce();
-      const parameters = { redirect_uri: redirectUri, scope: 'openid profile', state, nonce };
+      const parameters = { redirect_uri: redirectUri, scope, state, nonce, ...(prompt ? { prompt } : {}) };
       if (pkce !== 'missing') {
         parameters.code_challenge = pkce === 'plain' ? verifier : await oidc.calculatePKCECodeChallenge(verifier);
         parameters.code_challenge_method = pkce;
@@ -211,6 +215,10 @@ test('three clients: real OIDC protocol and persisted Main binding isolation', a
       const user = await response.json();
       assert.equal(user.sub, flow.identity.sub);
       assert.equal(user.pl_binding, flow.identity.binding_id);
+      assert.equal(user.iss, issuer);
+      assert.equal(user.aud, flow.client.clientId);
+      assert.equal(user.pl_auth_exp, flow.identity.auth_expires_at);
+      assert.equal(user.role, undefined);
       return payload;
     }
     function assertAuthorizationRejected(flow) {
@@ -225,14 +233,106 @@ test('three clients: real OIDC protocol and persisted Main binding isolation', a
       }
     }
 
-    await t.test('all three registered clients receive their own audience and Main binding; only legacy receives refresh', async () => {
+    await t.test('each client receives its own UserInfo audience; only legacy and consented Chat receive refresh', async () => {
       assert.deepEqual(rps.get(CLIENT_ID).serverMetadata().code_challenge_methods_supported, ['S256']);
       for (const [index, client] of clients.entries()) {
         const flow = await authorization(client, `success-user-${index}`);
         const tokens = await exchange(flow);
         await assertClaims(tokens, flow);
         assert.equal(typeof tokens.refresh_token, client.refreshEnabled ? 'string' : 'undefined');
+        assert.equal(tokens.scope.split(' ').includes('offline_access'), client.clientId === 'parallellines-openwebui');
       }
+    });
+
+    await t.test('Chat requires offline consent; NewAPI cannot obtain refresh even when it requests offline consent', async () => {
+      for (const [client, options] of [
+        [clients[1], { scope: 'openid profile' }],
+        [clients[1], { prompt: '' }],
+        [clients[2], { scope: 'openid profile offline_access', prompt: 'consent' }],
+      ]) {
+        const flow = await authorization(client, `no-offline-${secret()}`, options);
+        const tokens = await exchange(flow);
+        await assertClaims(tokens, flow);
+        assert.equal(tokens.refresh_token, undefined);
+        assert.equal(tokens.scope.split(' ').includes('offline_access'), false);
+      }
+    });
+
+    await t.test('UserInfo issuer/audience cannot be replaced by caller headers, query claims, another client or an ID token', async () => {
+      for (const client of clients) {
+        const flow = await authorization(client, `userinfo-${client.clientId}`);
+        const tokens = await exchange(flow);
+        const url = new URL(userinfoEndpoint);
+        url.searchParams.set('client_id', clients[1].clientId);
+        url.searchParams.set('aud', clients[1].clientId);
+        url.searchParams.set('iss', 'https://untrusted.invalid');
+        const response = await fetch(url, { redirect: 'error', headers: {
+          Authorization: `Bearer ${tokens.access_token}`, 'X-Forwarded-Host': 'untrusted.invalid',
+          'X-Client-Id': clients[1].clientId, 'X-OpenWebUI-User-Id': 'another-user',
+        } });
+        assert.equal(response.status, 200);
+        const user = await response.json();
+        assert.equal(user.iss, issuer);
+        assert.equal(user.aud, client.clientId);
+        assert.equal(user.sub, flow.identity.sub);
+        const wrongKind = await fetch(userinfoEndpoint, { redirect: 'error', headers: { Authorization: `Bearer ${tokens.id_token}` } });
+        assert.equal(wrongKind.status, 401);
+        assert.equal((await wrongKind.json()).sub, undefined);
+      }
+    });
+
+    await t.test('Chat refresh rotates, survives restart, retains its client and cannot extend the original Main expiry', async () => {
+      const flow = await authorization(clients[1], 'chat-refresh-user');
+      const tokens = await exchange(flow);
+      const initialRefresh = await provider.RefreshToken.find(tokens.refresh_token);
+      assert.equal(initialRefresh.clientId, clients[1].clientId);
+      assert.ok(initialRefresh.exp <= flow.identity.auth_expires_at);
+      for (const client of [clients[0], clients[2]]) {
+        await assertTokenRejected(await fetch(endpoint, {
+          method: 'POST', redirect: 'error',
+          headers: { Authorization: `Basic ${Buffer.from(`${client.clientId}:${client.clientSecret}`).toString('base64')}`, 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: tokens.refresh_token }),
+        }));
+      }
+      restart();
+      states.set(flow.identity.binding_id, { ...flow.identity, auth_expires_at: flow.identity.auth_expires_at + 86400 });
+      const refreshed = await oidc.refreshTokenGrant(rps.get(clients[1].clientId), tokens.refresh_token);
+      await assertClaims(refreshed, flow);
+      assert.notEqual(refreshed.refresh_token, tokens.refresh_token);
+      assert.ok((await provider.RefreshToken.find(refreshed.refresh_token)).exp <= flow.identity.auth_expires_at);
+      assert.ok((await provider.AccessToken.find(refreshed.access_token)).exp <= flow.identity.auth_expires_at);
+      await assert.rejects(oidc.refreshTokenGrant(rps.get(clients[1].clientId), tokens.refresh_token));
+      // A replay revokes the whole grant, including its replacement refresh token.
+      await assert.rejects(oidc.refreshTokenGrant(rps.get(clients[1].clientId), refreshed.refresh_token));
+    });
+
+    await t.test('Chat refresh observes shortened Main expiry, revocation and subject/binding changes without crossing users', async () => {
+      const control = await authorization(clients[1], 'chat-unaffected');
+      const controlTokens = await exchange(control);
+      const shortened = await authorization(clients[1], 'chat-shortened');
+      const shortTokens = await exchange(shortened);
+      const shorterExpiry = Math.floor(Date.now() / 1000) + 45;
+      states.set(shortened.identity.binding_id, { ...shortened.identity, auth_expires_at: shorterExpiry });
+      const refreshed = await oidc.refreshTokenGrant(rps.get(clients[1].clientId), shortTokens.refresh_token);
+      assert.equal(refreshed.claims().pl_auth_exp, shorterExpiry);
+      assert.ok(refreshed.claims().exp <= shorterExpiry);
+      assert.ok((await provider.RefreshToken.find(refreshed.refresh_token)).exp <= shorterExpiry);
+      assert.ok((await provider.AccessToken.find(refreshed.access_token)).exp <= shorterExpiry);
+      for (const [index, mutate] of [
+        () => ({ active: false }),
+        identity => ({ ...identity, auth_expires_at: Math.floor(Date.now() / 1000) - 1 }),
+        identity => ({ ...identity, sub: 'another-main-user' }),
+        identity => ({ ...identity, binding_id: secret() }),
+      ].entries()) {
+        const flow = await authorization(clients[1], `chat-revoked-${index}`);
+        const tokens = await exchange(flow);
+        states.set(flow.identity.binding_id, mutate(flow.identity));
+        await assert.rejects(oidc.refreshTokenGrant(rps.get(clients[1].clientId), tokens.refresh_token));
+        const response = await fetch(userinfoEndpoint, { redirect: 'error', headers: { Authorization: `Bearer ${tokens.access_token}` } });
+        assert.equal(response.status, 401);
+        assert.equal((await response.json()).sub, undefined);
+      }
+      await assertClaims(await oidc.refreshTokenGrant(rps.get(clients[1].clientId), controlTokens.refresh_token), control);
     });
 
     await t.test('each client rejects absent and plain PKCE, and another client callback before Main approval', async () => {

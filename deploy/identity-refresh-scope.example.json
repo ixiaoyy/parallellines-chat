@@ -1,0 +1,23 @@
+{
+  "source_dir": "/data/releases/REVIEWED_COMMIT/identity-bridge",
+  "provider_dir": "/data/deployment/existing-identity/provider",
+  "base_compose": "/data/deployment/existing-identity/compose.production.yaml",
+  "bridge_compose": "/data/deployment/existing-identity/compose.sso.yaml",
+  "bridge_env_files": [
+    "/data/deployment/existing-identity/.env",
+    "/data/deployment/existing-main-bridge/.env",
+    "/data/deployment/existing-identity/.runtime/session-release.env"
+  ],
+  "bridge_project": "REPLACE_EXISTING_PROJECT",
+  "bridge_service": "chat-oidc",
+  "bridge_container": "REPLACE_EXISTING_BRIDGE_CONTAINER",
+  "expected_bridge_image": "parallellines-chat-oidc:sso-recovery-20261030",
+  "new_bridge_image": "parallellines-chat-oidc:REPLACE_REVIEWED_RELEASE",
+  "candidate_compose": "/data/deployment/existing-candidate/compose.yaml",
+  "candidate_env_files": [],
+  "candidate_project": "REPLACE_EXISTING_CANDIDATE_PROJECT",
+  "ow_service": "openwebui",
+  "ow_container": "REPLACE_EXISTING_CHAT_CONTAINER",
+  "expected_ow_image": "ghcr.io/open-webui/open-webui:v0.12.5@sha256:0caf3d68199bcd8b7051775778691dfa5f3c8a355d1d6484000171b2974f40f9",
+  "receipt_dir": "/data/deployment/identity-refresh-receipts"
+}

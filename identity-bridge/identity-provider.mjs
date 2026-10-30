@@ -110,10 +110,13 @@ export function createIdentityProvider({ config, store, fetchImpl }) {
     // Pinned oidc-provider 9.13.2 accepts only S256; every registered client requires it.
     pkce: { required: () => true },
     scopes: ['openid', 'profile', 'offline_access'],
-    claims: { openid: ['sub', 'pl_binding', 'pl_auth_exp'], profile: ['name', 'preferred_username'] },
+    claims: { openid: ['sub', 'pl_binding', 'pl_auth_exp', 'iss', 'aud'], profile: ['name', 'preferred_username'] },
     // LibreChat's ID-token reuse path must receive the stable profile identifier too.
     conformIdTokenClaims: false,
-    issueRefreshToken: (_ctx, client, source) => clientsById.get(client.clientId)?.refreshEnabled === true && client.grantTypeAllowed('refresh_token') && source.scopes.has('openid'),
+    // Preserve legacy refresh behavior. Chat requires its native offline-access consent.
+    issueRefreshToken: (_ctx, client, source) => clientsById.get(client.clientId)?.refreshEnabled === true &&
+      client.grantTypeAllowed('refresh_token') && source.scopes.has('openid') &&
+      (client.clientId === CLIENT_ID || source.scopes.has('offline_access')),
     rotateRefreshToken: true,
     expiresWithSession: () => false,
     ttl: {
@@ -135,7 +138,18 @@ export function createIdentityProvider({ config, store, fetchImpl }) {
         ctx.state.plMainIdentity = effective;
         return {
           accountId: sub,
-          claims: async () => ({ sub, preferred_username: 'pl-' + sub, name: identity.name, pl_binding: identity.binding_id, pl_auth_exp: effective.auth_expires_at }),
+          claims: async use => {
+            const claims = { sub, preferred_username: 'pl-' + sub, name: identity.name,
+              pl_binding: identity.binding_id, pl_auth_exp: effective.auth_expires_at };
+            if (use !== 'userinfo') return claims;
+            // UserInfo's token is the provider-validated AccessToken, never caller metadata.
+            // ID-token iss/aud remain owned by oidc-provider's standard signing path.
+            const issuedClientId = token?.clientId;
+            if (!clientsById.has(issuedClientId) || issuedClientId !== ctx.oidc.client?.clientId) {
+              throw new errors.InvalidToken('Access token client mismatch');
+            }
+            return { ...claims, iss: config.issuer, aud: issuedClientId };
+          },
         };
       } catch (error) {
         if (error instanceof MainAuthorityError && error.code === 'main_binding_inactive') {

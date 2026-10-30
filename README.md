@@ -22,10 +22,13 @@ Main-site credentials are entered only at the main site. Users select the
 binding requires verification of the stable main-site subject and existing role.
 Email matching and automatic admin-role claims are disabled.
 
-**Model access is deliberately disabled in this baseline.** SSO does not connect
-New API user quotas to Chat requests. Do not fill a global shared relay key and
-describe it as per-user billing. Channel configuration and a separately reviewed
-identity-to-billing implementation belong to their own change.
+**Model access stays disabled until the separate New API OAuth relay is ready.**
+Chat now requests native offline access, with rotating refresh tokens bounded by
+the Main session. The native `system_oauth` connection example sends each user's
+access token to the trusted relay; it contains no shared API key. See
+[operations](docs/OPERATIONS.md#native-per-user-model-connection) for configuration,
+fresh-login requirements, and acceptance. The bridge alone does not establish
+per-user model billing.
 
 ## Prepare a release
 

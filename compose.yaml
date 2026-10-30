@@ -15,7 +15,9 @@ services:
       OAUTH_CLIENT_ID: parallellines-openwebui
       OPENID_REDIRECT_URI: https://chat.pingxingxian.space/oauth/oidc/login/callback
       OAUTH_PROVIDER_NAME: 平行线账号
-      OAUTH_SCOPES: openid profile
+      OAUTH_SCOPES: openid profile offline_access
+      OAUTH_AUTHORIZE_PARAMS: '{"prompt":"consent"}'
+      OAUTH_REFRESH_TOKEN_INCLUDE_SCOPE: "false"
       OAUTH_CODE_CHALLENGE_METHOD: S256
       OAUTH_TOKEN_ENDPOINT_AUTH_METHOD: client_secret_basic
       ENABLE_OAUTH_EMAIL_FALLBACK: "true"
@@ -31,6 +33,7 @@ services:
       ENABLE_PASSWORD_AUTH: "true"
       ENABLE_OLLAMA_API: "false"
       ENABLE_OPENAI_API: "false"
+      ENABLE_FORWARD_USER_INFO_HEADERS: "false"
       ENABLE_BASE_MODELS_CACHE: "false"
       OFFLINE_MODE: "true"
       RAG_EMBEDDING_MODEL: ""

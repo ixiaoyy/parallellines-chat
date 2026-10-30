@@ -29,7 +29,7 @@ test('production config fixes issuer/callback and requires private file rather t
     });
     assert.deepEqual(expanded.clients.map(({ clientId, callbackUri, refreshEnabled }) => ({ clientId, callbackUri, refreshEnabled })), [
       { clientId: 'parallellines-chat', callbackUri: config.callbackUri, refreshEnabled: true },
-      { clientId: 'parallellines-openwebui', callbackUri: 'https://chat.pingxingxian.space/oauth/oidc/login/callback', refreshEnabled: false },
+      { clientId: 'parallellines-openwebui', callbackUri: 'https://chat.pingxingxian.space/oauth/oidc/login/callback', refreshEnabled: true },
       { clientId: 'parallellines-newapi', callbackUri: 'https://api.pingxingxian.space/oauth/pingxingxian', refreshEnabled: false },
     ]);
     assert.throws(() => loadConfiguration({ ...env, OPENWEBUI_OIDC_CLIENT_SECRET: env.CHAT_OIDC_CLIENT_SECRET }));

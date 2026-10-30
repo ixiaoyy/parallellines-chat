@@ -10,13 +10,30 @@ registers three exact callbacks; separate client secrets are required:
 | Client | Callback | Refresh |
 | --- | --- | --- |
 | `parallellines-chat` | `https://pingxingxian.space/chat/oauth/openid/callback` | enabled |
-| `parallellines-openwebui` | `https://chat.pingxingxian.space/oauth/oidc/login/callback` | disabled |
+| `parallellines-openwebui` | `https://chat.pingxingxian.space/oauth/oidc/login/callback` | enabled with offline consent |
 | `parallellines-newapi` | `https://api.pingxingxian.space/oauth/pingxingxian` | disabled |
 
 All clients use `client_secret_basic` and PKCE S256. Do not weaken callback,
 state, subject, or client binding checks to work around a failed login. The API
 client needs the opt-in PKCE patch from ParallelLines-Api. This is OAuth/UserInfo
 for New API; it does not claim New API validates ID-token nonces.
+
+Chat requests `openid profile offline_access` and native
+`OAUTH_AUTHORIZE_PARAMS={"prompt":"consent"}`. Both are required for a Chat refresh
+token. Legacy refresh behavior is unchanged; the New API login client cannot
+obtain a refresh token. Every refresh checks the Main binding again, rotates the
+token, and remains bounded by the original Main expiry. Revocation, identity
+change, expiry, or an unavailable Main authority fails closed. Users with an
+older Chat login need to sign out and select the main-account button again to
+obtain a refresh token; changing environment values cannot upgrade old tokens.
+
+The JSON UserInfo endpoint is `https://pingxingxian.space/auth/oidc/me`. It adds
+`iss` (the fixed issuer) and `aud` (the actual token's registered client ID, a
+string) while retaining the existing subject/profile/binding claims. It does not
+take audience or identity from caller headers or query parameters. Standard ID
+token signing and audiences are unchanged. `pl_auth_exp` is integer epoch seconds;
+`pl_binding` is an opaque Main-session binding. The relay must accept only
+`aud=parallellines-openwebui`, never legacy or New API login access tokens.
 
 Preserve existing issuer signing keys, cookie keys, database, and legacy secrets.
 Give each new relying party its own secret. The example files are placeholders,
@@ -31,7 +48,69 @@ values in effect. Preserve unrelated settings. Never merge accounts by email.
 Bind an administrator only after validating their stable main-site subject and
 existing admin role. Keep a recovery administrator until handover is verified.
 
+## Native per-user model connection
+
+Install and enable the separately reviewed ParallelLines-Api OAuth relay before
+enabling model access. Use the stock Open WebUI administrator connection settings
+or its authenticated `/openai/config` and `/openai/config/update` API. Read the
+existing configuration, preserve unrelated connections, and merge the example
+in [deploy/openai-system-oauth.example.json](../deploy/openai-system-oauth.example.json)
+at the matching connection index. The example leaves model access disabled;
+switch `ENABLE_OPENAI_API` to `true` only when the adapter is ready. An existing
+database also needs this native settings update; environment values alone do not
+replace persisted connection settings.
+
+Use base URL `https://api.pingxingxian.space/oauth-relay/v1`, authentication type
+`system_oauth`, an empty API key, no custom Authorization/user headers, and no
+cookie forwarding. Keep `ENABLE_BASE_MODELS_CACHE=false`. The standard
+`system_oauth` path selects the current user's stored OAuth session and refreshes
+it natively; cookie-less tasks use that user's session lookup. Do not configure a
+shared fallback key. If there is no valid OAuth token, the adapter must reject
+the request. A local recovery-admin login alone supplies no Main OAuth token.
+New API may require one main-account login to create the verified subject mapping
+before that user can use the relay.
+
+Model listing and text/image-content chat, responses, and title tasks must use
+the same connection and user identity. Do not put title/background models on a
+second shared-key connection. Image content in chat is distinct from image
+generation endpoints; enable only protocols the adapter implements and verifies.
+Keep the default role `user`, role/group mapping disabled, and the existing
+recovery administrator. This change does not promote accounts or link by email.
+
+Pinned upstream behavior was checked in Open WebUI v0.12.5:
+[native authorization and refresh](https://github.com/open-webui/open-webui/blob/v0.12.5/backend/open_webui/utils/oauth.py),
+[system OAuth request headers](https://github.com/open-webui/open-webui/blob/v0.12.5/backend/open_webui/utils/headers.py),
+and [connection configuration](https://github.com/open-webui/open-webui/blob/v0.12.5/backend/open_webui/routers/openai.py).
+Its native refresh window is five minutes, matching this bridge's maximum access
+token lifetime; model requests can therefore refresh frequently. Retain native
+refresh locking, one Chat worker unless shared locking is configured, and the
+existing short lifetime. Real browser/model acceptance is separate from the
+local mock-authority protocol tests.
+
 ## Release and deploy
+
+For the reviewed `sso-recovery-20261030` to native-refresh transition, use
+`python3 deploy/deploy-identity-refresh.py /data/.../scope.json` on the deployment
+host with PyYAML installed. Prepare the nonsecret scope from
+[identity-refresh-scope.example.json](../deploy/identity-refresh-scope.example.json),
+using the actual existing paths/projects/containers. `bridge_env_files` must keep
+all three existing files in order, including the session-release file;
+`candidate_env_files` may be empty when no Compose interpolation file is used.
+The script never reads their contents or creates credentials.
+
+The script locks old/new source hashes, checks current images, builds from the
+existing bridge image with only two replacement modules, and backs up the live
+modules and both changed Compose files. It updates files in place to preserve
+bind-mounted inodes. Only the bridge and Chat services are recreated; the New API
+service block is preserved. Failure restores source/config and verifies health
+and old images. If any restore fails, no further recreation is attempted; the
+restricted failure receipt points to the backup for operator recovery. Existing
+image tags and backups are retained. This script does not enable model access,
+modify native model settings, edit Nginx, or perform browser/model acceptance.
+
+Local script regression tests use mocked subprocess calls only:
+`python3 -m unittest discover -s deploy -p test_deploy_identity_refresh.py`.
+POSIX permission enforcement requires a Linux deployment host.
 
 1. Commit reviewed source, tests, image lock, and templates. Record the commit and
    built image digest in private deployment records; use Git as release input.
