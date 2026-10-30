@@ -19,6 +19,10 @@ class FakeDeployer(release.Deployer):
         self.current_bridge = scope["expected_bridge_image"]
         self.fail_chat = fail_chat
         self.runtime_sources = {name: ("// old " + name).encode() for name in release.CHANGED}
+        self.release_sources = {name: ("// new " + name).encode() for name in release.CHANGED}
+        self.has_release = scope.get("resume_existing_image", False)
+        self.release_id = "sha256:" + "c" * 64
+        self.health_waits = []
 
     def run(self, args, timeout=180):
         args = list(map(str, args))
@@ -28,10 +32,15 @@ class FakeDeployer(release.Deployer):
             return "/data\n"
         if args[:2] == ["docker", "inspect"]:
             if args[3] == "{{.Image}}":
-                return "sha256:" + "a" * 64
+                return self.release_id if self.current_bridge == s["new_bridge_image"] else "sha256:" + "a" * 64
             return self.current_bridge if args[-1] == s["bridge_container"] else s["expected_ow_image"]
         if args[:3] == ["docker", "image", "inspect"]:
-            return "sha256:" + "a" * 64
+            return self.release_id if args[-1] == s["new_bridge_image"] else "sha256:" + "a" * 64
+        if args[:3] == ["docker", "image", "ls"]:
+            return self.release_id if self.has_release else ""
+        if args[:2] == ["docker", "run"] and "createHash" in args[-1]:
+            name = next(name for name in release.CHANGED if name in args[-1])
+            return release.digest(self.release_sources[name])
         if args[:2] == ["docker", "exec"]:
             name = next(name for name in release.CHANGED if name in args[-1])
             return (release.digest(self.runtime_sources[name]) if "createHash" in args[-1]
@@ -40,7 +49,8 @@ class FakeDeployer(release.Deployer):
             self.current_bridge = release.yaml.safe_load(s["bridge_compose"].read_text())["services"][s["bridge_service"]]["image"]
         return ""
 
-    def healthy(self, container):
+    def healthy(self, container, seconds=60):
+        self.health_waits.append((container, seconds))
         if self.fail_chat and container == self.s["ow_container"]:
             self.fail_chat = False
             raise RuntimeError("Synthetic Chat readiness failure")
@@ -99,6 +109,54 @@ class DeployTests(unittest.TestCase):
         self.assertTrue(all("--no-deps" in args and "--no-build" in args and "never" in args for args in ups))
         self.assertTrue(json.loads((self.scope["receipt_dir"] / "identity-refresh-receipt.json").read_text())["success"])
         self.assertTrue(all(".Config.Env" not in " ".join(args) for args in deployer.commands))
+        self.assertEqual(deployer.health_waits, [("issuer", 60), ("chat", 180)])
+
+    def test_resume_verifies_immutable_existing_image_without_rebuilding(self):
+        self.scope["resume_existing_image"] = True
+        deployer = FakeDeployer(self.scope)
+        deployer.deploy()
+        self.assertFalse(any(args[:2] == ["docker", "build"] for args in deployer.commands))
+        checks = [args for args in deployer.commands if args[:2] == ["docker", "run"]]
+        self.assertEqual(len(checks), 4)
+        self.assertTrue(all(deployer.release_id in args and "--network=none" in args for args in checks))
+        receipt = json.loads((self.scope["receipt_dir"] / "identity-refresh-receipt.json").read_text())
+        self.assertTrue(receipt["resumed_existing_image"])
+        self.assertEqual(receipt["bridge_image_id"], deployer.release_id)
+
+    def test_resume_rejects_wrong_release_source_before_any_mutation(self):
+        self.scope["resume_existing_image"] = True
+        deployer = FakeDeployer(self.scope)
+        deployer.release_sources["config.mjs"] = b"unreviewed source"
+        with self.assertRaisesRegex(RuntimeError, "Release image source mismatch"):
+            deployer.deploy()
+        for path, before in self.originals.items():
+            self.assertEqual(path.read_bytes(), before)
+        self.assertFalse(any(args[:2] in (["docker", "build"], ["docker", "compose"]) for args in deployer.commands))
+
+    def test_existing_image_requires_explicit_resume_and_resume_requires_image(self):
+        for flag in (False, True):
+            self.scope["resume_existing_image"] = flag
+            deployer = FakeDeployer(self.scope)
+            deployer.has_release = not flag
+            with self.assertRaisesRegex(RuntimeError, "Resume requires an existing image"):
+                deployer.deploy()
+            self.assertIsNone(deployer.run_dir)
+
+    def test_resume_tag_movement_stops_before_source_write_or_restart(self):
+        self.scope["resume_existing_image"] = True
+        deployer = FakeDeployer(self.scope)
+        original_compose = deployer.compose
+        def tag_moves(target, *args):
+            result = original_compose(target, *args)
+            if target == "chat":
+                deployer.release_id = "sha256:" + "d" * 64
+            return result
+        with patch.object(deployer, "compose", side_effect=tag_moves):
+            with self.assertRaisesRegex(RuntimeError, "rollback healthy"):
+                deployer.deploy()
+        for path, before in self.originals.items():
+            self.assertEqual(path.read_bytes(), before)
+        self.assertFalse(any(args[:2] == ["docker", "compose"] and "up" in args for args in deployer.commands))
 
     def test_health_failure_restores_both_configs_and_sources_before_restarting(self):
         deployer = FakeDeployer(self.scope, fail_chat=True)
@@ -110,6 +168,10 @@ class DeployTests(unittest.TestCase):
         self.assertEqual(deployer.current_bridge, self.scope["expected_bridge_image"])
         self.assertFalse((self.scope["receipt_dir"] / "identity-refresh-receipt.json").exists())
         self.assertTrue(json.loads((deployer.run_dir / "failure.json").read_text())["rollback_healthy"])
+        failure = json.loads((deployer.run_dir / "failure.json").read_text())
+        self.assertEqual(failure["failed_stage"], "activate-chat")
+        self.assertEqual(failure["failure_type"], "RuntimeError")
+        self.assertNotIn("Synthetic", json.dumps(failure))
 
     def test_source_drift_stops_before_build_or_mutation(self):
         (self.scope["provider_dir"] / "config.mjs").write_text("unexpected change")
@@ -239,6 +301,38 @@ class DeployTests(unittest.TestCase):
         for path, data in {**stale, self.scope["bridge_compose"]: reset_bytes}.items():
             self.assertEqual(path.read_bytes(), data)
         self.assertFalse(any(args[:2] == ["docker", "compose"] for args in deployer.commands))
+
+
+class ReadinessTests(unittest.TestCase):
+    def state(self, **overrides):
+        return {"running": True, "restarting": False, "oom_killed": False, "dead": False,
+                "exit_code": 0, "restart_count": 0, "health": "starting", **overrides}
+
+    def test_chat_can_become_ready_after_old_sixty_second_window(self):
+        deployer = release.Deployer({})
+        with patch.object(deployer, "container_state", side_effect=[self.state(), self.state(), self.state(health="healthy")]), \
+             patch.object(release.time, "monotonic", side_effect=[0, 60, 90]), \
+             patch.object(release.time, "sleep") as sleep:
+            deployer.healthy("chat", 180)
+        self.assertEqual(sleep.call_count, 2)
+
+    def test_timeout_and_terminal_failure_have_only_safe_state_fields(self):
+        deployer = release.Deployer({})
+        for state in (self.state(), self.state(running=False, oom_killed=True, exit_code=137)):
+            with patch.object(deployer, "container_state", return_value=state), \
+                 patch.object(release.time, "monotonic", side_effect=[0, 180]), \
+                 patch.object(release.time, "sleep"):
+                with self.assertRaises(release.ReadinessError) as raised:
+                    deployer.healthy("chat", 180)
+            self.assertEqual(raised.exception.details, {"container": "chat", "wait_seconds": 180, "state": state})
+
+    def test_state_inspection_does_not_read_logs_error_or_environment(self):
+        deployer = release.Deployer({})
+        with patch.object(deployer, "run", return_value=json.dumps(self.state())) as run:
+            self.assertEqual(deployer.container_state("chat"), self.state())
+        command = " ".join(run.call_args.args[0])
+        for forbidden in (".Config.Env", ".State.Error", ".Health.Log"):
+            self.assertNotIn(forbidden, command)
 
 
 if __name__ == "__main__":

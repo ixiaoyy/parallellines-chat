@@ -39,6 +39,13 @@ PATH_KEYS = ("source_dir", "provider_dir", "base_compose", "bridge_compose",
              "candidate_compose", "receipt_dir")
 NAME_KEYS = ("bridge_project", "bridge_service", "bridge_container", "candidate_project",
              "ow_service", "ow_container", "expected_bridge_image", "new_bridge_image", "expected_ow_image")
+HEALTH_TIMEOUT = {"bridge": 60, "chat": 180}
+
+
+class ReadinessError(RuntimeError):
+    def __init__(self, container, seconds, state):
+        super().__init__("Container did not become healthy: " + container)
+        self.details = {"container": container, "wait_seconds": seconds, "state": state}
 
 
 def check(condition, reason):
@@ -53,9 +60,10 @@ def digest(data):
 def load_scope(filename):
     scope = json.loads(Path(filename).read_text(encoding="utf-8"))
     required = set(PATH_KEYS + NAME_KEYS) | {"bridge_env_files", "candidate_env_files"}
-    optional = {"restore_from_verified_runtime", "restore_compose_backup"}
+    optional = {"restore_from_verified_runtime", "restore_compose_backup", "resume_existing_image"}
     check(required <= set(scope) <= required | optional, "Scope keys do not match the documented schema")
     check(type(scope.get("restore_from_verified_runtime", False)) is bool, "Runtime restore flag must be boolean")
+    check(type(scope.get("resume_existing_image", False)) is bool, "Image resume flag must be boolean")
     if "restore_compose_backup" in scope:
         check(scope.get("restore_from_verified_runtime") is True, "Compose restore requires explicit runtime reconciliation")
         scope["restore_compose_backup"] = safe_path(scope["restore_compose_backup"], file=True)
@@ -129,6 +137,7 @@ class Deployer:
         self.s = scope
         self.run_dir = None
         self.reconciliation_receipt = None
+        self.stage = "preflight"
 
     def run(self, args, timeout=180):
         result = subprocess.run([str(arg) for arg in args], capture_output=True, timeout=timeout)
@@ -149,19 +158,53 @@ class Deployer:
     def image(self, container):
         return self.run(["docker", "inspect", "--format", "{{.Config.Image}}", container]).strip()
 
-    def healthy(self, container):
-        for _ in range(30):
-            # Inspect only status booleans; .State.Health.Log could contain output.
-            state = self.run(["docker", "inspect", "--format", "{{.State.Running}} {{if .State.Health}}{{.State.Health.Status}}{{end}}", container]).strip()
-            if state == "true healthy":
+    def container_state(self, container):
+        # Never inspect .State.Error or .State.Health.Log: they can contain secrets.
+        template = ('{"running":{{.State.Running}},"restarting":{{.State.Restarting}},'
+                    '"oom_killed":{{.State.OOMKilled}},"dead":{{.State.Dead}},'
+                    '"exit_code":{{.State.ExitCode}},"restart_count":{{.RestartCount}},'
+                    '"health":"{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}"}')
+        state = json.loads(self.run(["docker", "inspect", "--format", template, container]))
+        for key in ("running", "restarting", "oom_killed", "dead"):
+            check(type(state.get(key)) is bool, "Unexpected container state")
+        for key in ("exit_code", "restart_count"):
+            check(type(state.get(key)) is int and state[key] >= 0, "Unexpected container state")
+        check(state.get("health") in ("none", "starting", "healthy", "unhealthy"), "Unexpected health status")
+        return state
+
+    def healthy(self, container, seconds=60):
+        deadline = time.monotonic() + seconds
+        while True:
+            state = self.container_state(container)
+            if state["running"] and state["health"] == "healthy":
                 return
-            time.sleep(2)
-        raise RuntimeError("Container did not become healthy: " + container)
+            if state["oom_killed"] or state["dead"] or (not state["running"] and not state["restarting"]):
+                raise ReadinessError(container, seconds, state)
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise ReadinessError(container, seconds, state)
+            time.sleep(min(2, remaining))
 
     def recreate(self, target):
         service = self.s["bridge_service" if target == "bridge" else "ow_service"]
         self.compose(target, "up", "-d", "--no-deps", "--no-build", "--pull", "never", service)
-        self.healthy(self.s["bridge_container" if target == "bridge" else "ow_container"])
+        self.healthy(self.s["bridge_container" if target == "bridge" else "ow_container"], HEALTH_TIMEOUT[target])
+
+    def verified_release_image(self):
+        """Verify source and syntax using an immutable image ID without network/env."""
+        image_id = self.run(["docker", "image", "inspect", "--format", "{{.Id}}", self.s["new_bridge_image"]]).strip()
+        check(re.fullmatch(r"sha256:[a-f0-9]{64}", image_id), "Unexpected release image ID")
+        for name in CHANGED:
+            prefix = ["docker", "run", "--rm", "--network=none", "--read-only", "--entrypoint", "node", image_id]
+            actual = self.run(prefix + ["-e", "process.stdout.write(require('node:crypto').createHash('sha256').update(require('node:fs').readFileSync('/app/" + name + "')).digest('hex'))"]).strip()
+            check(actual == NEW_SOURCE[name], "Release image source mismatch: " + name)
+            self.run(prefix + ["--check", "/app/" + name])
+        self.check_release_tag(image_id)
+        return image_id
+
+    def check_release_tag(self, image_id):
+        check(self.run(["docker", "image", "inspect", "--format", "{{.Id}}", self.s["new_bridge_image"]]).strip() == image_id,
+              "Release image tag moved")
 
     def reconcile_known_stale_source(self):
         """Opt-in repair of reviewed source/Compose checkout drift; no restart."""
@@ -250,9 +293,11 @@ class Deployer:
         bridge_id = self.run(["docker", "inspect", "--format", "{{.Image}}", s["bridge_container"]]).strip()
         check(re.fullmatch(r"sha256:[a-f0-9]{64}", bridge_id), "Unexpected current image ID")
         check(self.run(["docker", "image", "inspect", "--format", "{{.Id}}", s["expected_bridge_image"]]).strip() == bridge_id, "Bridge tag moved")
-        # Refuse replacing an existing release tag; it must remain available for rollback.
+        # Reuse only an explicitly requested, source-verified immutable image.
         images = self.run(["docker", "image", "ls", "--quiet", s["new_bridge_image"]]).strip()
-        check(not images, "New image tag already exists; inspect previous attempt")
+        resuming = s.get("resume_existing_image", False)
+        check(bool(images) == resuming, "Resume requires an existing image; a new deployment requires an unused tag")
+        release_id = self.verified_release_image() if resuming else None
         self.reconcile_known_stale_source()
         originals = {}
         release = {}
@@ -298,18 +343,21 @@ class Deployer:
         (backup / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
         (backup / "images.json").write_text(json.dumps({"bridge": s["expected_bridge_image"], "bridge_id": bridge_id,
             "chat": s["expected_ow_image"]}, indent=2), encoding="utf-8")
-        build = self.run_dir / "build"
-        build.mkdir(mode=0o700)
-        for name in CHANGED:
-            (build / name).write_bytes(release[s["provider_dir"] / name])
-        (build / "Dockerfile").write_text("FROM " + s["expected_bridge_image"] + "\nCOPY --chown=node:node " + " ".join(CHANGED) + " /app/\n", encoding="utf-8")
-        self.run(["docker", "build", "--pull=false", "--network=none", "-t", s["new_bridge_image"], build], timeout=300)
+        self.stage = "verify-release-image" if resuming else "build-release-image"
+        if not resuming:
+            build = self.run_dir / "build"
+            build.mkdir(mode=0o700)
+            for name in CHANGED:
+                (build / name).write_bytes(release[s["provider_dir"] / name])
+            (build / "Dockerfile").write_text("FROM " + s["expected_bridge_image"] + "\nCOPY --chown=node:node " + " ".join(CHANGED) + " /app/\n", encoding="utf-8")
+            self.run(["docker", "build", "--pull=false", "--network=none", "-t", s["new_bridge_image"], build], timeout=300)
+            release_id = self.verified_release_image()
         check(self.run(["docker", "image", "inspect", "--format", "{{.Id}}", s["expected_bridge_image"]]).strip() == bridge_id, "Base image tag changed during build")
-        for name in CHANGED:
-            self.run(["docker", "run", "--rm", "--network=none", "--read-only", "--entrypoint", "node", s["new_bridge_image"], "--check", "/app/" + name])
         touched = []
         restarted = []
         try:
+            self.stage = "activate-files"
+            self.check_release_tag(release_id)
             for filename, data in originals.items():
                 check(filename.read_bytes() == data, "Target changed during preflight")
             for filename, data in replacements.items():
@@ -318,19 +366,28 @@ class Deployer:
             for target in ("bridge", "chat"):
                 self.compose(target, "config", "--quiet")
             for target in ("bridge", "chat"):
+                self.stage = "activate-" + target
+                self.check_release_tag(release_id)
                 restarted.append(target)
                 self.recreate(target)
+            self.stage = "verify-activation"
             check(self.image(s["bridge_container"]) == s["new_bridge_image"], "Bridge release not active")
+            check(self.run(["docker", "inspect", "--format", "{{.Image}}", s["bridge_container"]]).strip() == release_id,
+                  "Running bridge image ID differs from the verified release")
+            self.check_release_tag(release_id)
             check(self.image(s["ow_container"]) == s["expected_ow_image"], "Chat image changed unexpectedly")
             for filename, data in {**untouched, **replacements}.items():
                 check(filename.read_bytes() == data, "Configuration changed during activation")
-        except Exception:
+        except Exception as activation_error:
+            failed_stage = self.stage
             rollback_ok = True
+            rollback_failures = []
             for filename in reversed(touched):
                 try:
                     write_in_place(filename, originals[filename])
-                except Exception:
+                except Exception as error:
                     rollback_ok = False
+                    rollback_failures.append({"stage": "restore-files", "type": type(error).__name__})
             # Never restart against a partially restored configuration/source set.
             if rollback_ok:
                 for target in restarted:
@@ -340,16 +397,26 @@ class Deployer:
                         container = s["bridge_container" if target == "bridge" else "ow_container"]
                         expected = s["expected_bridge_image" if target == "bridge" else "expected_ow_image"]
                         check(self.image(container) == expected, "Rollback image mismatch")
-                    except Exception:
+                    except Exception as error:
                         rollback_ok = False
-            (self.run_dir / "failure.json").write_text(json.dumps({"success": False, "rollback_healthy": rollback_ok,
-                "backup": str(backup)}), encoding="utf-8")
+                        diagnostic = {"stage": "rollback-" + target, "type": type(error).__name__}
+                        if isinstance(error, ReadinessError):
+                            diagnostic["readiness"] = error.details
+                        rollback_failures.append(diagnostic)
+            failure = {"success": False, "rollback_healthy": rollback_ok, "failed_stage": failed_stage,
+                       "failure_type": type(activation_error).__name__, "rollback_failures": rollback_failures,
+                       "backup": str(backup)}
+            if isinstance(activation_error, ReadinessError):
+                failure["readiness"] = activation_error.details
+            (self.run_dir / "failure.json").write_text(json.dumps(failure), encoding="utf-8")
             raise RuntimeError("Activation failed; rollback " + ("healthy" if rollback_ok else "needs operator recovery") + "; backup: " + str(backup)) from None
         result = {"success": True, "time_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
                   "backup": str(backup), "bridge_image": s["new_bridge_image"], "chat_image": s["expected_ow_image"],
                   "changed_services": [s["bridge_service"], s["ow_service"]], "source_sha256": NEW_SOURCE,
                   "secrets_changed": False, "roles_changed": False, "newapi_changed": False,
                   "fresh_chat_login_required": True,
+                  "resumed_existing_image": resuming, "bridge_image_id": release_id,
+                  "health_timeout_seconds": HEALTH_TIMEOUT,
                   "runtime_source_reconciliation": str(self.reconciliation_receipt) if self.reconciliation_receipt else None}
         receipt.write_text(json.dumps(result, indent=2), encoding="utf-8")
         print(json.dumps(result))
