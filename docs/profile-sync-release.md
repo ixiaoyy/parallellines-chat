@@ -4,7 +4,10 @@ Release owner executes this in the existing projects; this document does not
 authorize creating another issuer or changing service secrets.
 
 1. Build `main-profile-overlay/Dockerfile` using `MAIN_BASE_IMAGE` set to the exact
-   inspected running main API image ID/digest. The build verifies all five
+   unique local base tag whose inspected ID matches the running main API image.
+   A bare `sha256:imageID` is not a Dockerfile repository reference. The release
+   helper creates and verifies a new local alias without replacing existing tags.
+   The build verifies all five
    baseline hashes before replacing exactly four application files. If the main
    API uses runtime source mounts, verify those separately and update only the
    reviewed four mounts; an image build cannot override a bind mount. Preserve

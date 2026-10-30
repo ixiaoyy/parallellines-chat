@@ -105,20 +105,28 @@ class Release:
     def build(self):
         s = self.s
         check(not self.run(['docker', 'image', 'ls', '--quiet', s['new_image']]), 'release_tag_already_exists')
+        base_tag = None
+        if self.phase != 'chat':
+            base_tag = s['new_image'] + '-base'
+            check(not self.run(['docker', 'image', 'ls', '--quiet', base_tag]), 'base_tag_already_exists')
+            self.run(['docker', 'image', 'tag', s['expected_image_id'], base_tag])
+            check(self.run(['docker', 'image', 'inspect', '--format', '{{.Id}}', base_tag]) == s['expected_image_id'], 'base_alias_mismatch')
         if self.phase == 'main':
             context = self.source / 'main-profile-overlay'
-            args = ['--build-arg', 'MAIN_BASE_IMAGE=' + s['expected_image_id']]
+            args = ['--build-arg', 'MAIN_BASE_IMAGE=' + base_tag]
         elif self.phase == 'bridge':
             context = self.run_dir / 'bridge-build'
             context.mkdir(mode=0o700)
             for name in BRIDGE_FILES:
                 (context / name).write_bytes((self.source / 'identity-bridge' / name).read_bytes())
-            (context / 'Dockerfile').write_text('FROM ' + s['expected_image_id'] + '\nCOPY --chown=node:node ' + ' '.join(BRIDGE_FILES) + ' /app/\nRUN node --check /app/config.mjs && node --check /app/identity-provider.mjs && node --check /app/main-bridge.mjs && node --check /app/main-profile.mjs\n')
+            (context / 'Dockerfile').write_text('FROM ' + base_tag + '\nCOPY --chown=node:node ' + ' '.join(BRIDGE_FILES) + ' /app/\nRUN node --check /app/config.mjs && node --check /app/identity-provider.mjs && node --check /app/main-bridge.mjs && node --check /app/main-profile.mjs\n')
             args = []
         else:
             context = self.source / 'openwebui-profile-overlay'
             args = []
         self.run(['docker', 'build', '--pull=false', '--network=none', '-t', s['new_image'], *args, context], timeout=300)
+        if base_tag:
+            check(self.run(['docker', 'image', 'inspect', '--format', '{{.Id}}', base_tag]) == s['expected_image_id'], 'base_alias_changed_during_build')
         image_id = self.run(['docker', 'image', 'inspect', '--format', '{{.Id}}', s['new_image']])
         check(re.fullmatch(r'sha256:[a-f0-9]{64}', image_id), 'invalid_built_image')
         return context, image_id
@@ -129,7 +137,7 @@ class Release:
         service['image'] = s['new_image']
         service['build'] = {'context': str(context)}
         if self.phase == 'main':
-            service['build']['args'] = {'MAIN_BASE_IMAGE': s['expected_image_id']}
+            service['build']['args'] = {'MAIN_BASE_IMAGE': s['new_image'] + '-base'}
         else:
             check(isinstance(service.get('environment'), dict), 'environment_mapping_required')
             service['environment'].update({'OIDC_MAIN_PROFILE_SYNC_ENABLED': 'true'} if self.phase == 'bridge' else CHAT_ENV)
