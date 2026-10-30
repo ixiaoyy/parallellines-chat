@@ -67,6 +67,7 @@ test('preserves config and existing grants, enables only approved connection las
   assert.equal(state.models.get(MODEL_IDS[0]).name, 'Preserved name');
   assert.equal(state.models.get(MODEL_IDS[0]).access_grants.length, 2);
   assert.deepEqual(state.configs['/openai/config'].OPENAI_API_BASE_URLS, [RELAY_BASE]);
+  assert.equal(state.configs['/openai/config'].OPENAI_API_CONFIGS['0'].api_type, 'responses');
   assert.equal(state.calls.filter(c => c.method === 'POST').at(-1).path, '/openai/config/update');
   state.calls.length = 0;
   const again = await configureModelAccess(input(), { fetchImpl: fakeFetch(state) });
@@ -143,4 +144,95 @@ test('all model guards complete before a write, and existing public grants skip 
   for (const id of MODEL_IDS) safe.models.set(id, { id, base_model_id: null, is_active: true, access_grants: [{ ...grant, id: 'server-generated' }] });
   await configureModelAccess(input(), { fetchImpl: fakeFetch(safe) });
   assert.equal(safe.calls.filter(c => c.method === 'POST' && c.path.includes('/model/access/')).length, 0);
+});
+
+function enabledConnectionFixture() {
+  const state = fixture();
+  state.configs['/openai/config'] = {
+    ENABLE_OPENAI_API: true,
+    OPENAI_API_BASE_URLS: [RELAY_BASE],
+    OPENAI_API_KEYS: [''],
+    OPENAI_API_CONFIGS: { '0': { enable: true, auth_type: 'system_oauth', connection_type: 'external', forward_cookies: false, headers: {}, model_ids: [...MODEL_IDS], api_type: 'chat_completions', custom_option: 'preserve' } },
+    PRESERVE_TOP_LEVEL: { nested: true },
+  };
+  return state;
+}
+
+test('responses-only mode changes only the enabled trusted connection protocol for all three models', async () => {
+  const state = enabledConnectionFixture();
+  const before = clone(state.configs);
+  const result = await configureModelAccess({ ...input(), mode: 'responses-only' }, { fetchImpl: fakeFetch(state) });
+  const expected = clone(before);
+  expected['/openai/config'].OPENAI_API_CONFIGS['0'].api_type = 'responses';
+  assert.deepEqual(state.configs, expected);
+  assert.deepEqual(state.calls.map(({ method, path }) => `${method} ${path}`), ['GET /openai/config', 'POST /openai/config/update', 'GET /openai/config']);
+  assert.deepEqual(result.models, MODEL_IDS);
+  assert.equal(result.apiType, 'responses');
+  assert.equal(result.changed, true);
+  assert.equal(result.noModelCalls, true);
+  assert.equal(JSON.stringify(result).includes('ephemeral-test-token'), false);
+  assert.equal(state.models.size, 0);
+});
+
+test('responses-only preserves URL-keyed connection config and an already configured connection is read-only', async () => {
+  const state = enabledConnectionFixture();
+  const current = state.configs['/openai/config'];
+  current.OPENAI_API_CONFIGS = { [RELAY_BASE]: current.OPENAI_API_CONFIGS['0'] };
+  await configureModelAccess({ ...input(), mode: 'responses-only' }, { fetchImpl: fakeFetch(state) });
+  assert.deepEqual(Object.keys(state.configs['/openai/config'].OPENAI_API_CONFIGS), [RELAY_BASE]);
+  state.calls.length = 0;
+  const again = await configureModelAccess({ ...input(), mode: 'responses-only' }, { fetchImpl: fakeFetch(state) });
+  assert.equal(again.changed, false);
+  assert.deepEqual(state.calls.map(({ method, path }) => `${method} ${path}`), ['GET /openai/config']);
+});
+
+test('responses-only rejects disabled, unmatched or unsafe connections before writing', async () => {
+  const mutations = [
+    current => { current.ENABLE_OPENAI_API = false; },
+    current => { current.OPENAI_API_CONFIGS['0'].enable = false; },
+    current => { delete current.OPENAI_API_CONFIGS['0'].enable; },
+    current => { current.OPENAI_API_BASE_URLS = ['https://unapproved.example/v1']; },
+    current => { current.OPENAI_API_BASE_URLS.push('https://unapproved.example/v1'); },
+    current => { current.OPENAI_API_CONFIGS['0'].auth_type = 'bearer'; },
+    current => { delete current.OPENAI_API_CONFIGS['0'].auth_type; },
+    current => { current.OPENAI_API_CONFIGS['0'].forward_cookies = true; },
+    current => { current.OPENAI_API_KEYS = ['never-output-this-key']; },
+    current => { current.OPENAI_API_CONFIGS['0'].headers.Authorization = 'never-output-this-key'; },
+    current => { current.OPENAI_API_CONFIGS['0'].azure = true; },
+  ];
+  for (const mutate of mutations) {
+    const state = enabledConnectionFixture();
+    mutate(state.configs['/openai/config']);
+    await assert.rejects(configureModelAccess({ ...input(), mode: 'responses-only' }, { fetchImpl: fakeFetch(state) }), error => error.receipt.partialOrUncertain === false && !JSON.stringify(error.receipt).includes('never-output'));
+    assert.deepEqual(state.calls.map(({ method, path }) => `${method} ${path}`), ['GET /openai/config']);
+  }
+});
+
+test('responses-only rejects arbitrary destinations and unknown modes without a request', async () => {
+  for (const patch of [{ baseURL: 'https://evil.example' }, { mode: 'unknown' }]) {
+    let called = false;
+    await assert.rejects(configureModelAccess({ ...input(), mode: 'responses-only', ...patch }, { fetchImpl: async () => { called = true; } }));
+    assert.equal(called, false);
+  }
+});
+
+test('responses-only reports uncertain writes and mismatched readback without credentials', async () => {
+  const state = enabledConnectionFixture();
+  await assert.rejects(configureModelAccess({ ...input(), mode: 'responses-only' }, { fetchImpl: fakeFetch(state, 'POST /openai/config/update') }), error => {
+    assert.equal(error.receipt.failedStep, 'openai.write');
+    assert.equal(error.receipt.partialOrUncertain, true);
+    assert.equal(JSON.stringify(error.receipt).includes('ephemeral-test-token'), false);
+    return true;
+  });
+  const mismatch = enabledConnectionFixture();
+  const fetch = fakeFetch(mismatch);
+  await assert.rejects(configureModelAccess({ ...input(), mode: 'responses-only' }, { fetchImpl: async (url, options) => {
+    const response = await fetch(url, options);
+    if (options.method === 'GET' && mismatch.calls.length === 3) {
+      const changed = await response.json();
+      changed.PRESERVE_TOP_LEVEL.nested = false;
+      return Response.json(changed);
+    }
+    return response;
+  } }), error => error.receipt.failedStep === 'openai.verify' && error.receipt.partialOrUncertain === true);
 });

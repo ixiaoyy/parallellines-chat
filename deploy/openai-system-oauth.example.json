@@ -6,6 +6,7 @@
     "0": {
       "enable": true,
       "auth_type": "system_oauth",
+      "api_type": "responses",
       "headers": {},
       "forward_cookies": false
     }

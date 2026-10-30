@@ -1,7 +1,7 @@
 import { isDeepStrictEqual } from 'node:util';
 import { pathToFileURL } from 'node:url';
 
-// OWUI v0.12.5. CLI input: JSON on stdin with adminBearer and optional baseURL.
+// OWUI v0.12.5. CLI input: JSON on stdin with adminBearer, optional baseURL/mode.
 // Invoke only after the relay adapter is ready. No credentials in argv or env.
 // This helper does not change OIDC scopes, user roles, balances or provider secrets.
 export const CHAT_BASE = 'https://chat.pingxingxian.space';
@@ -43,7 +43,8 @@ function containsCredential(value) {
   });
 }
 
-function desiredOpenAI(current, check) {
+/** 检查原生连接结构与批准目标；返回连接定位信息，失败由调用方 check 安全终止。 */
+function inspectOpenAI(current, check) {
   check(object(current), 'openai.schema');
   const urls = current.OPENAI_API_BASE_URLS;
   const keys = current.OPENAI_API_KEYS;
@@ -64,31 +65,41 @@ function desiredOpenAI(current, check) {
     check(!config.prefix_id && !config.azure && config.provider !== 'azure', 'openai.unapproved-provider-options');
     check(config.headers === undefined || object(config.headers), 'openai.schema');
   }
+  return { url, config, isTarget };
+}
+
+function desiredOpenAI(current, check) {
+  const { config, isTarget } = inspectOpenAI(current, check);
   return {
     ...current,
     ENABLE_OPENAI_API: true,
     OPENAI_API_BASE_URLS: [RELAY_BASE],
     OPENAI_API_KEYS: [''],
     OPENAI_API_CONFIGS: {
-      '0': { ...(isTarget ? config : {}), enable: true, auth_type: 'system_oauth', connection_type: 'external', forward_cookies: false, headers: isTarget ? (config.headers ?? {}) : {}, model_ids: [] },
+      '0': { ...(isTarget ? config : {}), enable: true, auth_type: 'system_oauth', api_type: 'responses', connection_type: 'external', forward_cookies: false, headers: isTarget ? (config.headers ?? {}) : {}, model_ids: [] },
     },
   };
 }
 
-/** Native configuration only. Caller must verify adapter readiness before invoking. */
+/**
+ * 配置原生模型接入；input 通过 adminBearer 认证，mode=responses-only 仅修正已启用的批准连接。
+ * 返回无凭据回执，不调用模型；调用方须事先确认适配器就绪，未指定 mode 保持原全量配置流程。
+ */
 export async function configureModelAccess(input, { fetchImpl = globalThis.fetch } = {}) {
   const completed = [];
   let writeAttempted = false;
   const check = (condition, step) => { if (!condition) throw new SafeFailure(step, completed, writeAttempted); };
   check(object(input), 'input');
+  check(input.mode === undefined || input.mode === 'responses-only', 'input.mode');
   check(typeof input.adminBearer === 'string' && input.adminBearer.length > 0 && input.adminBearer.length <= 16384 && !/\s/.test(input.adminBearer), 'input');
   const base = input.baseURL === undefined ? CHAT_BASE : input.baseURL;
   check(typeof base === 'string' && (base === CHAT_BASE || base === `${CHAT_BASE}/`), 'input.base-url');
   check(typeof fetchImpl === 'function', 'input.fetch');
   const steps = [];
+  const allowed = input.mode === 'responses-only' ? new Set([`GET ${OPENAI.get}`, `POST ${OPENAI.post}`]) : ALLOWED;
 
   async function request(method, path, step, body, allow404 = false) {
-    check(ALLOWED.has(`${method} ${path}`), 'endpoint');
+    check(allowed.has(`${method} ${path}`), 'endpoint');
     try {
       const response = await fetchImpl(`${CHAT_BASE}${path}`, {
         method,
@@ -105,8 +116,26 @@ export async function configureModelAccess(input, { fetchImpl = globalThis.fetch
     }
   }
 
-  // All schema, provider and model-access prechecks happen before the first write.
+  // 窄模式只处理已存在的连接，完成后立即返回，不读取或修改其他模型设置。
   const currentOpenAI = await request('GET', OPENAI.get, 'openai.read');
+  if (input.mode === 'responses-only') {
+    const { url, config, isTarget } = inspectOpenAI(currentOpenAI, check);
+    check(isTarget && currentOpenAI.ENABLE_OPENAI_API === true && config.enable === true, 'openai.connection-not-enabled');
+    check(config.auth_type === 'system_oauth', 'openai.unapproved-auth');
+    check(config.forward_cookies === false, 'openai.cookie-forwarding');
+    const configKey = Object.hasOwn(currentOpenAI.OPENAI_API_CONFIGS, '0') ? '0' : url;
+    // 三个批准模型共用此连接；仅切换协议，保留连接索引、身份、权限及所有其他参数。
+    const nextOpenAI = { ...currentOpenAI, OPENAI_API_CONFIGS: { ...currentOpenAI.OPENAI_API_CONFIGS, [configKey]: { ...config, api_type: 'responses' } } };
+    const changed = !isDeepStrictEqual(currentOpenAI, nextOpenAI);
+    if (changed) {
+      writeAttempted = true;
+      await request('POST', OPENAI.post, 'openai.write', nextOpenAI);
+      const readback = await request('GET', OPENAI.get, 'openai.readback');
+      check(isDeepStrictEqual(readback, nextOpenAI), 'openai.verify');
+      completed.push('openai');
+    }
+    return { ok: true, mode: 'responses-only', changed, apiType: 'responses', models: [...MODEL_IDS], systemOAuth: true, sharedKeyConfigured: false, noModelCalls: true, noFeesExpected: true };
+  }
   const nextOpenAI = desiredOpenAI(currentOpenAI, check);
   const configPlans = [];
   for (const spec of CONFIGS) {

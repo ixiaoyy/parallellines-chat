@@ -1,0 +1,5 @@
+ARG CHAT_BASE_IMAGE
+FROM ${CHAT_BASE_IMAGE}
+# 从已确认的当前运行镜像增量构建，保留已有资料同步和前端产物。
+COPY apply_responses.py /tmp/pl-responses-apply.py
+RUN python /tmp/pl-responses-apply.py /app/backend/open_webui

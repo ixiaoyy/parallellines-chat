@@ -18,7 +18,7 @@
       "name": "openai_connection",
       "get": "/openai/config",
       "post": "/openai/config/update",
-      "mode": "Read current config in memory; confirm no existing configured providers or exactly this approved connection before replacing connection arrays. Preserve unrelated top-level fields. Stop if another provider is found.",
+      "mode": "Read current config in memory; confirm no existing configured providers or exactly this approved connection before replacing connection arrays. Preserve unrelated top-level fields. Stop if another provider is found. For an existing enabled trusted OAuth connection, configure-model-access.mjs input mode=responses-only updates only api_type using GET /openai/config, POST /openai/config/update and GET readback; it does not enable connections or apply other settings.",
       "required_fields": ["OPENAI_API_BASE_URLS", "OPENAI_API_KEYS", "OPENAI_API_CONFIGS"],
       "patch": {
         "ENABLE_OPENAI_API": true,
@@ -28,6 +28,7 @@
           "0": {
             "enable": true,
             "auth_type": "system_oauth",
+            "api_type": "responses",
             "connection_type": "external",
             "forward_cookies": false,
             "headers": {},

@@ -87,6 +87,27 @@ refresh locking, one Chat worker unless shared locking is configured, and the
 existing short lifetime. Real browser/model acceptance is separate from the
 local mock-authority protocol tests.
 
+## Native Responses for the three approved models
+
+The shared trusted OAuth connection uses `api_type: responses` for
+`gpt-6-luna`, `gpt-6.1-terra`, and `gpt-6.1-sol`. Keep its base URL ending in
+`/oauth-relay/v1`; Open WebUI appends `/responses` itself. Do not append the
+endpoint to the configured base URL or enable New API's Chat-to-Responses
+conversion, which is incompatible with this installation's standard billing.
+
+For an existing enabled connection, `configure-model-access.mjs` accepts
+`mode: responses-only` with the existing administrator bearer on stdin. That
+mode changes only the connection protocol and reads it back, without reapplying
+model access, task, image, cache or default-model settings. It never enables a
+disabled connection or calls a model.
+
+The pinned native converter also needs the narrow
+`openwebui-profile-overlay/apply_responses.py` overlay. It preserves reasoning
+levels, maps legacy `reasoning_effort` to `reasoning.effort`, and omits sampling
+parameters unsupported while reasoning is enabled. See
+[Responses release and recovery](responses-release.md) for the image and scoped
+server-maintenance path when no administrator credential is available.
+
 ## Release and deploy
 
 For the reviewed `sso-recovery-20261030` to native-refresh transition, use
