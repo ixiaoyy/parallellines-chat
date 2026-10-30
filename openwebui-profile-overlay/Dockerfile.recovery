@@ -1,0 +1,10 @@
+FROM ghcr.io/open-webui/open-webui:v0.12.5@sha256:0caf3d68199bcd8b7051775778691dfa5f3c8a355d1d6484000171b2974f40f9
+COPY apply.py /tmp/pl-profile-apply.py
+COPY apply_model_auth.py /tmp/pl-model-auth-apply.py
+COPY main_profile_sync.py main_model_auth.py /app/backend/open_webui/utils/
+RUN python /tmp/pl-profile-apply.py /app/backend/open_webui \
+    && python /tmp/pl-model-auth-apply.py /app/backend/open_webui \
+    && python -m py_compile /app/backend/open_webui/utils/oauth.py /app/backend/open_webui/utils/main_profile_sync.py /app/backend/open_webui/utils/main_model_auth.py /app/backend/open_webui/routers/openai.py
+# Generated from the same fixed upstream source plus frontend-auth-recovery.
+# COPY preserves the official image's unchanged Pyodide runtime assets.
+COPY frontend-build/ /app/build/

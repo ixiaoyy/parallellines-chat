@@ -1,8 +1,10 @@
 # Components and notices
 
-Open WebUI v0.12.5 is distributed as its official image, with its original UI,
-name, and branding unchanged. The optional profile overlay modifies only its
-existing-account OAuth callback and preserves upstream license obligations.
+Open WebUI v0.12.5 is based on its official image, with its original page layout,
+name, and branding retained. The optional profile overlay modifies its
+existing-account OAuth callback. The recovery overlay adds a model-authorization
+error response and a native toast action in the model-list client. Both preserve
+upstream license obligations.
 Its current terms are the **Open WebUI License**,
 not a blanket MIT license. The pinned license and history are retained under
 `LICENSES/`. Earlier materials retain the terms described in that history.

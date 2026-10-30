@@ -16,3 +16,5 @@ node_modules/
 .build/
 dist/
 __pycache__/
+openwebui-profile-overlay/frontend-build/
+openwebui-profile-overlay/frontend-build-manifest.json

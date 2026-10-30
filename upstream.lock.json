@@ -5,7 +5,7 @@
   "image": "ghcr.io/open-webui/open-webui:v0.12.5@sha256:0caf3d68199bcd8b7051775778691dfa5f3c8a355d1d6484000171b2974f40f9",
   "platform": "linux/amd64",
   "application_source_modified": true,
-  "application_patch": "openwebui-profile-overlay (existing OIDC profile conflict handling only)",
+  "application_patch": "openwebui-profile-overlay (OIDC profile synchronization and explicit model authorization recovery)",
   "branding_modified": false,
   "identity_bridge_node_image": "node:24.22.1-alpine@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53"
 }

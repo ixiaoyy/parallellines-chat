@@ -1,0 +1,55 @@
+{
+  "upstream_commit": "f7ac7ee10962ddec0017f5c29b6740d9b9c5faca",
+  "upstream_archive_sha256": "b145736118fc6bb96f938a9570769ac7dd4d3afb3aac0a125c0504d139e6116e",
+  "source_input_sha256": {
+    "package-lock.json": "a16007f1de06fe3ca6cbac2a0025055495501a26c9bf067562320dc2e5260c9d",
+    "src/lib/apis/index.ts": "2b95dfed036e202ea53c68b6937da0ea3edf91de5e61bd4708705a9d63ef8a1e",
+    "src/lib/apis/main-oauth-auth-recovery.mjs": "f12e64d74d12de33dfc8a503ca62ed37ce2e8dfc3ba7f37613112a42899edaa2"
+  },
+  "patch_sha256": "79906694f609a06e10510ef5b01014782a36452df3834ac48bf26ce9c02809c1",
+  "node": "22.14.0",
+  "npm": "10.9.2",
+  "vite": "5.4.21",
+  "install_command": "npm ci --force --ignore-scripts --no-audit --no-fund",
+  "crypto_verify": "passed; node scripts/encryption/artifact.mjs",
+  "test_result": "6 focused recovery tests passed against actual patched getModels",
+  "build_command": "node --max-old-space-size=12288 node_modules/vite/bin/vite.js build",
+  "build_env": {
+    "APP_BUILD_HASH": "79906694f609a06e10510ef5b01014782a36452df3834ac48bf26ce9c02809c1",
+    "APP_BUILD_CHANNEL": "unknown",
+    "npm_package_version": "0.12.5"
+  },
+  "skipped_step": "pyodide:fetch; existing official image Pyodide assets and generated lock must remain untouched",
+  "excluded_overlay_paths": [
+    {
+      "file": "pyodide/pyodide-lock.json",
+      "sha256": "67e6f0b62fa972daa5fc27c28b3c2ad388f5e343a0be6cab9464d1def06a54a6",
+      "bytes": 150016
+    }
+  ],
+  "files": 5625,
+  "bytes": 176898889,
+  "manifest_sha256": "8302a50f2ce3b75b2db3be4ecc86bb5546dc54206af4c2fe2fcf1c0ba833262a",
+  "index_sha256": "0f2bfe52d789898f00d1366becc040d2e53a8876ce2da43c9f21fa14a322924c",
+  "entry_assets": [
+    "/_app/immutable/entry/app.Da_EBf4X.js",
+    "/_app/immutable/entry/start.BZ7c7s8H.js"
+  ],
+  "recovery_chunks": [
+    {
+      "file": "_app/immutable/chunks/BIdVVeqw.js",
+      "sha256": "18abd46a67bcf277cbffb53a8bc76007a82e3c84697429d4e7392fad844c6671",
+      "bytes": 19433,
+      "has_oidc_action": true
+    }
+  ],
+  "compiled_version_chunks": [
+    "_app/immutable/chunks/CCN7Eqqb.js"
+  ],
+  "compiled_svelte_version": {
+    "version": "79906694f609a06e10510ef5b01014782a36452df3834ac48bf26ce9c02809c1"
+  },
+  "deployment_target": "/app/build; additive Docker COPY, no directory clearing",
+  "server_operations": false,
+  "paid_model_requests": false
+}
