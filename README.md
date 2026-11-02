@@ -41,6 +41,10 @@ per-user model billing.
 See [authorization recovery](docs/model-authorization-recovery.md) for the small
 frontend/backend patch, reproducible build and scoped release procedure.
 
+The opt-in `openrouter/free` Chat extension keeps the existing OAuth/Responses
+connection, paid models and defaults, and isolates free-chat background tasks.
+See [its preparation, activation and recovery contract](docs/openrouter-free-release.md).
+
 ## Prepare a release
 
 Keep filled environment files, signing keys, runtime databases, and logs outside

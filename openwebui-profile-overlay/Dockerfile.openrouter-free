@@ -1,0 +1,5 @@
+ARG CHAT_BASE_IMAGE
+FROM ${CHAT_BASE_IMAGE}
+# 在已核对的现有 Chat 镜像上增量应用，保留 Responses、身份及前端补丁。
+COPY apply_openrouter_free.py /tmp/pl-openrouter-free-apply.py
+RUN python /tmp/pl-openrouter-free-apply.py /app/backend/open_webui
