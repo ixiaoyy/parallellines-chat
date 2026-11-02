@@ -6,10 +6,9 @@ import { renderLoginFailure } from '../error-page.mjs';
 const MAIN_URL = 'https://pingxingxian.space/';
 const retryHref = html => html.match(/<a class="retry" href="([^"]+)"/)?.[1];
 
-test('recovery allows only the five explicit product entry points', () => {
+test('recovery allows only the four explicit product entry points', () => {
   for (const url of [
     MAIN_URL,
-    'https://pingxingxian.space/chat/',
     'https://chat.pingxingxian.space/auth',
     'https://chat.pingxingxian.space/oauth/oidc/login',
     'https://api.pingxingxian.space/login',
@@ -42,6 +41,7 @@ test('untrusted URLs and non-string inputs fall back without reflecting any inpu
     'https://user:password@chat.pingxingxian.space/auth',
     'https://api.pingxingxian.space/admin',
     'https://pingxingxian.space/chat',
+    'https://pingxingxian.space/chat/',
     'https://pingxingxian.space/other',
     ' https://chat.pingxingxian.space/auth',
     'https://chat.pingxingxian.space/auth\n',

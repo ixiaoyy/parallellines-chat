@@ -8,7 +8,7 @@ let store;
 try {
   const config = loadConfiguration();
   store = createSqliteStore({ directory: config.databaseDirectory, filename: config.databaseFilename,
-    clientIds: config.clients.map(client => client.clientId) });
+    clientId: config.clients[0].clientId, clientIds: config.clients.map(client => client.clientId) });
   const { provider, handler } = createIdentityProvider({ config, store });
   provider.on('server_error', () => console.error('oidc_provider_request_failed'));
   const server = http.createServer((req, res) => Promise.resolve(handler(req, res)).catch(() => {

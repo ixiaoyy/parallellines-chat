@@ -3,7 +3,6 @@ import { createHash } from 'node:crypto';
 const MAIN_URL = 'https://pingxingxian.space/';
 const RETRY_URLS = new Set([
   MAIN_URL,
-  'https://pingxingxian.space/chat/',
   'https://chat.pingxingxian.space/auth',
   'https://chat.pingxingxian.space/oauth/oidc/login',
   'https://api.pingxingxian.space/login',

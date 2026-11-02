@@ -11,7 +11,7 @@ test('production config fixes issuer/callback and requires private file rather t
   // Configuration validation only; the protocol test generates a real RSA private key.
   await writeFile(signingPath, JSON.stringify({ keys: [{ kty: 'RSA', alg: 'RS256', kid: 'synthetic', d: 'synthetic-config-only' }] }), { mode: 0o600 });
   const env = {
-    CHAT_OIDC_CLIENT_SECRET: 'synthetic-client-secret-'.repeat(3),
+    OPENWEBUI_OIDC_CLIENT_SECRET: 'synthetic-openwebui-'.repeat(3),
     CHAT_SSO_BRIDGE_SECRET: 'synthetic-bridge-secret-'.repeat(3),
     CHAT_OIDC_COOKIE_KEYS: JSON.stringify(['synthetic-cookie-secret-'.repeat(3)]),
     CHAT_OIDC_SIGNING_JWKS_FILE: signingPath,
@@ -20,7 +20,9 @@ test('production config fixes issuer/callback and requires private file rather t
   try {
     const config = loadConfiguration(env);
     assert.equal(config.issuer, 'https://pingxingxian.space/auth/oidc');
-    assert.equal(config.callbackUri, 'https://pingxingxian.space/chat/oauth/openid/callback');
+    assert.equal(config.callbackUri, undefined);
+    assert.equal(config.clientSecret, undefined);
+    assert.deepEqual(config.clients.map(client => client.clientId), ['parallellines-openwebui']);
     assert.equal(config.apiRoot, 'https://pingxingxian.space/api/v1');
     assert.equal(config.secureCookies, true);
     const expanded = loadConfiguration({ ...env,
@@ -28,17 +30,20 @@ test('production config fixes issuer/callback and requires private file rather t
       NEWAPI_OAUTH_CLIENT_SECRET: 'synthetic-newapi-'.repeat(3),
     });
     assert.deepEqual(expanded.clients.map(({ clientId, callbackUri, refreshEnabled }) => ({ clientId, callbackUri, refreshEnabled })), [
-      { clientId: 'parallellines-chat', callbackUri: config.callbackUri, refreshEnabled: true },
       { clientId: 'parallellines-openwebui', callbackUri: 'https://chat.pingxingxian.space/oauth/oidc/login/callback', refreshEnabled: true },
       { clientId: 'parallellines-newapi', callbackUri: 'https://api.pingxingxian.space/oauth/pingxingxian', refreshEnabled: false },
     ]);
-    assert.throws(() => loadConfiguration({ ...env, OPENWEBUI_OIDC_CLIENT_SECRET: env.CHAT_OIDC_CLIENT_SECRET }));
+    assert.throws(() => loadConfiguration({ ...env, NEWAPI_OAUTH_CLIENT_SECRET: env.OPENWEBUI_OIDC_CLIENT_SECRET }));
+    const { OPENWEBUI_OIDC_CLIENT_SECRET, ...shared } = env;
+    assert.throws(() => loadConfiguration(shared));
+    assert.throws(() => loadConfiguration({ ...shared, CHAT_OIDC_CLIENT_SECRET: 'retired-client-'.repeat(4) }));
+    const onlyNewApi = loadConfiguration({ ...shared, NEWAPI_OAUTH_CLIENT_SECRET: 'synthetic-newapi-'.repeat(3) });
+    assert.deepEqual(onlyNewApi.clients.map(client => client.clientId), ['parallellines-newapi']);
     const profile = loadConfiguration({ ...env, OIDC_MAIN_PROFILE_SYNC_ENABLED: 'true',
       OPENWEBUI_OIDC_CLIENT_SECRET: 'synthetic-openwebui-'.repeat(3),
       NEWAPI_OAUTH_CLIENT_SECRET: 'synthetic-newapi-'.repeat(3) });
-    assert.equal(profile.clients[0].profileSyncEnabled, undefined);
+    assert.equal(profile.clients[0].profileSyncEnabled, true);
     assert.equal(profile.clients[1].profileSyncEnabled, true);
-    assert.equal(profile.clients[2].profileSyncEnabled, true);
     assert.throws(() => loadConfiguration({ ...env, NEWAPI_OAUTH_CLIENT_SECRET: 'short' }));
     assert.throws(() => loadConfiguration({ ...env, OPENWEBUI_OIDC_CLIENT_SECRET: 'same-secret-'.repeat(4), NEWAPI_OAUTH_CLIENT_SECRET: 'same-secret-'.repeat(4) }));
     for (const invalid of [
@@ -50,6 +55,7 @@ test('production config fixes issuer/callback and requires private file rather t
     ]) assert.throws(() => loadConfiguration({ ...env, ...invalid }));
     const local = loadConfiguration({ ...env, PUBLIC_MAIN_ORIGIN: 'http://127.0.0.1:2001', PUBLIC_ISSUER: 'http://127.0.0.1:2002/auth/oidc', MAIN_BACKEND_URL: 'http://127.0.0.1:2001/api/v1' });
     assert.equal(local.secureCookies, false);
-    assert.equal(local.callbackUri, 'http://127.0.0.1:2001/chat/oauth/openid/callback');
+    assert.equal(local.apiRoot, 'http://127.0.0.1:2001/api/v1');
+    assert.equal(local.clients[0].callbackUri, 'https://chat.pingxingxian.space/oauth/oidc/login/callback');
   } finally { await rm(directory, { recursive: true, force: true }); }
 });

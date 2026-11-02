@@ -1,0 +1,17 @@
+{
+  "before": {
+    "config.mjs": "55b565aef841a071f6830473484927b44fce4bac1cf2a2c605676df1bd729f53",
+    "identity-provider.mjs": "0261e33c5d493f8e9c0d2f454162a382efb6297041609892b706604d3001de9d",
+    "server.mjs": "1b2a81f016963a3624cf8b5609479f2f548a560216ac213a9990cd93f079a9e9",
+    "sqlite-adapter.mjs": "7ff219281cf7b0529a0550598899d47b57c948d8ed0c4f9dd96d9e9857f7d99c",
+    "error-page.mjs": "6563af6611b4412c6d7340dcc15993156b881981bfe9e9bb90a3098ba1135233"
+  },
+  "after": {
+    "config.mjs": "8687830e4c047eaac42867de7d5ddbd40d807e66be8d499d327a84456430a312",
+    "identity-provider.mjs": "474266247516b03f1123bee6d061fec1661a279723c349fabb12173e027575e5",
+    "server.mjs": "49207b8c739be447f299be6b4d0ce51b1bb051eba5f0640e1d5de21be6dc2918",
+    "sqlite-adapter.mjs": "b2c93031ba5fc2219b25d875e4564a87e691b382f33db2eb6cbfa17b76775992",
+    "error-page.mjs": "917ebfb36edbf7dc8543430e537f8bec42e6884f2c56c33a51d9cc3dbe9f6947"
+  },
+  "preserved_protocol_file": "main-bridge.mjs"
+}

@@ -3,7 +3,6 @@ import { createMainBridge, MainAuthorityError } from './main-bridge.mjs';
 import { renderLoginFailure } from './error-page.mjs';
 import { requireMainProfile } from './main-profile.mjs';
 
-export const CLIENT_ID = 'parallellines-chat';
 const now = () => Math.floor(Date.now() / 1000);
 const interactionIdPattern = /^[A-Za-z0-9_-]{8,128}$/;
 const approvalPattern = /^[A-Za-z0-9_-]{32,128}$/;
@@ -59,11 +58,14 @@ async function finishBody(req) {
 
 /** Standard OIDC OP, backed exclusively by Main approval/session-state and durable grants. */
 export function createIdentityProvider({ config, store, fetchImpl }) {
-  const registeredClients = config.clients || [{ clientId: CLIENT_ID, clientSecret: config.clientSecret,
-    callbackUri: config.callbackUri, refreshEnabled: true }];
+  const registeredClients = config.clients;
+  // Main 服务协议与外部 RP 不是同一实体；这里只接受当前两个外部客户端。
+  if (!Array.isArray(registeredClients) || registeredClients.some(client =>
+    !['parallellines-openwebui', 'parallellines-newapi'].includes(client.clientId))) {
+    throw new Error('invalid_registered_clients');
+  }
   const clientsById = new Map(registeredClients.map(client => [client.clientId, client]));
-  const recoveryUrlFor = clientId => clientId === CLIENT_ID ? config.mainOrigin + '/chat/' :
-    clientId === 'parallellines-openwebui' ? 'https://chat.pingxingxian.space/oauth/oidc/login' :
+  const recoveryUrlFor = clientId => clientId === 'parallellines-openwebui' ? 'https://chat.pingxingxian.space/oauth/oidc/login' :
     clientId === 'parallellines-newapi' ? 'https://api.pingxingxian.space/login' : config.mainOrigin + '/';
   if (!registeredClients.length || clientsById.size !== registeredClients.length ||
       new Set(registeredClients.map(client => client.callbackUri)).size !== registeredClients.length ||
@@ -112,12 +114,12 @@ export function createIdentityProvider({ config, store, fetchImpl }) {
     pkce: { required: () => true },
     scopes: ['openid', 'profile', 'email', 'offline_access'],
     claims: { openid: ['sub', 'pl_binding', 'pl_auth_exp', 'iss', 'aud'], profile: ['name', 'preferred_username'], email: ['email', 'email_verified'] },
-    // LibreChat's ID-token reuse path must receive the stable profile identifier too.
+    // 保留两个现有客户端的 ID-token 资料声明形状。
     conformIdTokenClaims: false,
-    // Preserve legacy refresh behavior. Chat requires its native offline-access consent.
+    // 新 Chat 仍须原生 offline-access 同意；New API 的注册不允许刷新。
     issueRefreshToken: (_ctx, client, source) => clientsById.get(client.clientId)?.refreshEnabled === true &&
       client.grantTypeAllowed('refresh_token') && source.scopes.has('openid') &&
-      (client.clientId === CLIENT_ID || source.scopes.has('offline_access')),
+      source.scopes.has('offline_access'),
     rotateRefreshToken: true,
     expiresWithSession: () => false,
     ttl: {

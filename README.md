@@ -15,8 +15,8 @@ recorded in `upstream.lock.json`. Read [NOTICE.md](NOTICE.md) for component term
 
 - `compose.yaml`: official Chat image, loopback-only port, data-disk bind mount,
   and native OIDC settings.
-- `identity-bridge/`: separately built main-site OIDC provider and tests. It is
-  shared by Chat, New API, and the existing legacy chat client.
+- `identity-bridge/`: separately built main-site OIDC provider and tests, shared
+  by the new Chat and New API only. The retired LibreChat RP is not registered.
 - `compose.bridge.yaml`: integration reference for that existing issuer service.
 - `deploy/nginx-chat.conf`: additive vhost, including WebSocket and SSE support.
 - `docs/OPERATIONS.md`: account configuration, release, upgrade, and rollback.
@@ -65,4 +65,7 @@ The deployment templates are normalized for separate repositories. Existing
 server container names, paths, and project names must be preserved in the
 server-only interpolation file during adoption. Do not run the examples with
 new defaults over an existing service and assume data will follow automatically.
-These sources do not switch the main site's `/chat` route or delete LibreChat.
+The legacy-retirement procedure redirects the main site's `/chat` entry to the
+new Chat and removes the old LibreChat deployment after archiving its data.
+See [retirement and recovery](docs/legacy-retirement.md); the shared identity
+bridge must be rehomed first and must not be deleted with the old application.

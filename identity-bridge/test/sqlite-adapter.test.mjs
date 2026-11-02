@@ -21,7 +21,7 @@ function fixture() {
 
 async function grant(store, id = 'grant-1', expiresAt = 1_800_000_120) {
   const adapter = new store.Adapter('Grant');
-  await adapter.upsert(id, { jti: id, accountId: 'main:1', clientId: 'parallellines-chat' }, 300);
+  await adapter.upsert(id, { jti: id, accountId: 'main:1', clientId: 'parallellines-openwebui' }, 300);
   store.setGrantBinding(id, { sub: 'main:1', binding_id: 'binding-1', auth_expires_at: expiresAt, name: 'Synthetic member' });
 }
 
@@ -61,6 +61,20 @@ test('parallel consume has one winner and stale upsert cannot clear consumed sta
   } finally { second?.close(); f.cleanup(); }
 });
 
+test('client records outside the configured RP set remain unavailable without deleting persisted data', async () => {
+  const f = fixture();
+  let archivedReader;
+  try {
+    const clients = new f.store.Adapter('Client');
+    await clients.upsert('retired-rp', { client_id: 'retired-rp', value: 'historical' }, 300);
+    await clients.upsert('parallellines-openwebui', { client_id: 'parallellines-openwebui', value: 'current' }, 300);
+    assert.equal(await clients.find('retired-rp'), undefined);
+    assert.equal((await clients.find('parallellines-openwebui')).value, 'current');
+    archivedReader = createSqliteStore({ ...f.options, clientId: 'retired-rp' });
+    assert.equal((await new archivedReader.Adapter('Client').find('retired-rp')).value, 'historical');
+  } finally { archivedReader?.close(); f.cleanup(); }
+});
+
 test('secondary index reassignment never revives an older row when the newest expires', async () => {
   const f = fixture();
   try {
@@ -97,8 +111,8 @@ test('expired interaction exposes only recovery context and remains unavailable 
   let restarted;
   try {
     const id = 'expired-recovery-interaction';
-    const clientId = 'parallellines-chat';
-    const redirectUri = 'https://pingxingxian.space/chat/oauth/openid/callback';
+    const clientId = 'parallellines-openwebui';
+    const redirectUri = 'https://chat.pingxingxian.space/oauth/oidc/login/callback';
     const interactions = new f.store.Adapter('Interaction');
     await interactions.upsert(id, {
       uid: 'recovery-uid', userCode: 'recovery-code',
@@ -164,7 +178,7 @@ test('grant/binding revocation removes all associated models and blocks resurrec
     f.store.close();
     restarted = createSqliteStore(f.options);
     await assert.rejects(new restarted.Adapter('RefreshToken').upsert('late', { grantId: 'grant-1' }, 60), { error: 'invalid_grant' });
-    await assert.rejects(new restarted.Adapter('Grant').upsert('grant-1', { accountId: 'main:1', clientId: 'parallellines-chat' }, 60), { error: 'invalid_grant' });
+    await assert.rejects(new restarted.Adapter('Grant').upsert('grant-1', { accountId: 'main:1', clientId: 'parallellines-openwebui' }, 60), { error: 'invalid_grant' });
   } finally { restarted?.close(); f.cleanup(); }
 });
 

@@ -13,7 +13,7 @@ const nowSeconds = clock => Math.max(1, Math.floor(clock() / 1000));
  * No identity, approval code, or token is logged. Never share this DB between replicas.
  */
 export function createSqliteStore({ directory, filename = 'oidc.sqlite', clock = Date.now,
-  clientId = 'parallellines-chat', clientIds = [clientId] } = {}) {
+  clientId = 'parallellines-openwebui', clientIds = [clientId] } = {}) {
   if (!validId(directory) || filename !== basename(filename) || !/^[A-Za-z0-9_.-]+$/.test(filename) ||
       !validId(clientId) || !Array.isArray(clientIds) || !clientIds.length || !clientIds.every(validId) ||
       new Set(clientIds).size !== clientIds.length || typeof clock !== 'function') throw new Error('Invalid persistence configuration');
@@ -123,6 +123,8 @@ export function createSqliteStore({ directory, filename = 'oidc.sqlite', clock =
 
     async find(id) {
       if (!validId(id)) return undefined;
+      // OP 在静态注册未命中后仍会查 Client 表；不得让历史客户端记录恢复已下线的 RP。
+      if (this.model === 'Client' && !allowedClientIds.has(id)) return undefined;
       return deserialize(db.prepare(`SELECT payload,consumed_at FROM oidc_records WHERE model=? AND id=? AND ${liveSql}`)
         .get(this.model, id, clock()));
     }

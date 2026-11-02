@@ -8,9 +8,11 @@ import { randomBytes } from 'node:crypto';
 import { generateKeyPair, exportJWK, createLocalJWKSet, jwtVerify } from 'jose';
 import * as oidc from 'openid-client';
 import { createSqliteStore } from '../sqlite-adapter.mjs';
-import { createIdentityProvider, CLIENT_ID } from '../identity-provider.mjs';
+import { createIdentityProvider } from '../identity-provider.mjs';
 import { createMainBridge } from '../main-bridge.mjs';
 
+const CLIENT_ID = 'parallellines-openwebui';
+const MAIN_CLIENT_ID = 'parallellines-chat';
 const secret = () => randomBytes(32).toString('base64url');
 const serve = async callback => {
   const server = http.createServer((req, res) => Promise.resolve(callback(req, res)).catch(() => {
@@ -55,7 +57,7 @@ test('real OIDC: main approval, private claims, refresh binding, restart and fre
     const input = JSON.parse(raw || '{}');
     bridgeCalls.push({ path: req.url, authCorrect: req.headers.authorization === 'Bearer ' + bridgeSecret, inputKeys: Object.keys(input).sort() });
     assert.equal(req.headers.authorization, 'Bearer ' + bridgeSecret);
-    assert.equal(input.client_id, CLIENT_ID);
+    assert.equal(input.client_id, MAIN_CLIENT_ID);
     if (!authorityAvailable) return reply(res, { error: 'unavailable' }, 503);
     if (req.url === '/api/v1/auth/chat-sso/exchange') {
       const value = approvals.get(input.approval_code);
@@ -72,9 +74,11 @@ test('real OIDC: main approval, private claims, refresh binding, restart and fre
   const { privateKey, publicKey } = await generateKeyPair('RS256', { extractable: true });
   const signing = { ...await exportJWK(privateKey), kid: 'synthetic-test-key', use: 'sig', alg: 'RS256' };
   const publicJwk = { ...await exportJWK(publicKey), kid: signing.kid, use: 'sig', alg: 'RS256' };
+  const callbackUri = mainOrigin + '/oauth/oidc/login/callback';
   const config = {
-    issuer, mainOrigin, callbackUri: mainOrigin + '/chat/oauth/openid/callback', apiRoot: mainOrigin + '/api/v1',
-    bridgeSecret, clientSecret, cookieKeys: [secret()], jwks: { keys: [signing] }, secureCookies: false,
+    issuer, mainOrigin, apiRoot: mainOrigin + '/api/v1',
+    clients: [{ clientId: CLIENT_ID, clientSecret, callbackUri, refreshEnabled: true }],
+    bridgeSecret, cookieKeys: [secret()], jwks: { keys: [signing] }, secureCookies: false,
   };
   const startProvider = () => {
     store = createSqliteStore({ directory });
@@ -90,7 +94,7 @@ test('real OIDC: main approval, private claims, refresh binding, restart and fre
     async function authorize(sub, lifetime = 1200) {
       const verifier = oidc.randomPKCECodeVerifier(), state = oidc.randomState(), nonce = oidc.randomNonce();
       const url = oidc.buildAuthorizationUrl(rp, {
-        redirect_uri: config.callbackUri, scope: 'openid profile', state, nonce,
+        redirect_uri: callbackUri, scope: 'openid profile offline_access', prompt: 'consent', state, nonce,
         code_challenge: await oidc.calculatePKCECodeChallenge(verifier), code_challenge_method: 'S256',
       });
       const initial = await browser.request(url);
@@ -129,13 +133,13 @@ test('real OIDC: main approval, private claims, refresh binding, restart and fre
         assert.equal(action, issuer + '/session/end/confirm');
         const fields = new URLSearchParams([...html.matchAll(/<input type="hidden" name="([^"]+)" value="([^"]*)"/g)].map(match => [match[1], match[2]]));
         resumed = await browser.request(action, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: fields });
-        if (resumed.status === 303 && !resumed.headers.get('location').startsWith(config.callbackUri)) {
+        if (resumed.status === 303 && !resumed.headers.get('location').startsWith(callbackUri)) {
           resumed = await browser.request(resumed.headers.get('location'));
         }
       }
       assert.equal(resumed.status, 303);
       const callback = new URL(resumed.headers.get('location'));
-      assert.equal(callback.origin + callback.pathname, config.callbackUri);
+      assert.equal(callback.origin + callback.pathname, callbackUri);
       const tokens = await oidc.authorizationCodeGrant(rp, callback, { pkceCodeVerifier: verifier, expectedState: state, expectedNonce: nonce });
       const verified = await jwtVerify(tokens.id_token, createLocalJWKSet({ keys: [publicJwk] }), { issuer, audience: CLIENT_ID });
       assert.equal(verified.payload.sub, sub);

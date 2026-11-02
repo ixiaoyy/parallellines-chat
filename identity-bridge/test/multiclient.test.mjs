@@ -8,10 +8,11 @@ import { randomBytes } from 'node:crypto';
 import { generateKeyPair, exportJWK, createLocalJWKSet, jwtVerify } from 'jose';
 import * as oidc from 'openid-client';
 import { createSqliteStore } from '../sqlite-adapter.mjs';
-import { createIdentityProvider, CLIENT_ID } from '../identity-provider.mjs';
+import { createIdentityProvider } from '../identity-provider.mjs';
 
 // Real OP, SQLite adapter and relying-party library; only the Main authority is
 // synthetic. This suite does not establish real Main/browser SSO acceptance.
+const MAIN_CLIENT_ID = 'parallellines-chat';
 const secret = () => randomBytes(32).toString('base64url');
 const reply = (res, value, status = 200) => {
   res.writeHead(status, { 'Content-Type': 'application/json' });
@@ -52,7 +53,7 @@ class Browser {
   }
 }
 
-test('three clients: real OIDC protocol and persisted Main binding isolation', async t => {
+test('two clients: real OIDC protocol and persisted Main binding isolation', async t => {
   const directory = await mkdtemp(path.join(os.tmpdir(), 'pl-multiclient-test-'));
   const bridgeSecret = secret();
   const approvals = new Map();
@@ -68,7 +69,7 @@ test('three clients: real OIDC protocol and persisted Main binding isolation', a
     const input = JSON.parse(raw || '{}');
     assert.equal(req.headers.authorization, `Bearer ${bridgeSecret}`);
     // Main's service identity is deliberately distinct from the external RP ID.
-    assert.equal(input.client_id, CLIENT_ID);
+    assert.equal(input.client_id, MAIN_CLIENT_ID);
     authorityCalls.push({ path: req.url, interaction: input.interaction_id, binding: input.binding_id });
     if (req.url === '/api/v1/auth/chat-sso/exchange') {
       const approval = approvals.get(input.approval_code);
@@ -86,16 +87,15 @@ test('three clients: real OIDC protocol and persisted Main binding isolation', a
     opServer = await serve((req, res) => handler(req, res));
     const issuer = `http://127.0.0.1:${opServer.address().port}/auth/oidc`;
     const clients = [
-      { clientId: CLIENT_ID, clientSecret: secret(), callbackUri: `${mainOrigin}/chat/oauth/openid/callback`, refreshEnabled: true },
       { clientId: 'parallellines-openwebui', clientSecret: secret(), callbackUri: `${mainOrigin}/oauth/oidc/login/callback`, refreshEnabled: true },
       { clientId: 'parallellines-newapi', clientSecret: secret(), callbackUri: `${mainOrigin}/oauth/pingxingxian`, refreshEnabled: false },
     ];
+    const [chatClient, apiClient] = clients;
     const { privateKey, publicKey } = await generateKeyPair('RS256', { extractable: true });
     const signing = { ...await exportJWK(privateKey), kid: 'synthetic-multiclient-key', use: 'sig', alg: 'RS256' };
     const publicKeys = createLocalJWKSet({ keys: [{ ...await exportJWK(publicKey), kid: signing.kid, use: 'sig', alg: 'RS256' }] });
     const config = {
       issuer, mainOrigin, apiRoot: `${mainOrigin}/api/v1`, clients,
-      clientSecret: clients[0].clientSecret, callbackUri: clients[0].callbackUri,
       bridgeSecret, cookieKeys: [secret()], jwks: { keys: [signing] }, secureCookies: false,
     };
     function restart() {
@@ -110,8 +110,8 @@ test('three clients: real OIDC protocol and persisted Main binding isolation', a
         { client_secret: client.clientSecret }, oidc.ClientSecretBasic(client.clientSecret),
         { execute: [oidc.allowInsecureRequests] }));
     }
-    const endpoint = rps.get(CLIENT_ID).serverMetadata().token_endpoint;
-    const userinfoEndpoint = rps.get(CLIENT_ID).serverMetadata().userinfo_endpoint;
+    const endpoint = rps.get(chatClient.clientId).serverMetadata().token_endpoint;
+    const userinfoEndpoint = rps.get(chatClient.clientId).serverMetadata().userinfo_endpoint;
     assert.equal(userinfoEndpoint, `${issuer}/me`);
 
     async function begin(client, { browser = new Browser(), pkce = 'S256', redirectUri = client.callbackUri,
@@ -233,8 +233,23 @@ test('three clients: real OIDC protocol and persisted Main binding isolation', a
       }
     }
 
-    await t.test('each client receives its own UserInfo audience; only legacy and consented Chat receive refresh', async () => {
-      assert.deepEqual(rps.get(CLIENT_ID).serverMetadata().code_challenge_methods_supported, ['S256']);
+    await t.test('retired LibreChat RP is rejected before creating a Main approval interaction', async () => {
+      const callsBefore = authorityCalls.length;
+      const url = new URL(rps.get(chatClient.clientId).serverMetadata().authorization_endpoint);
+      url.search = new URLSearchParams({
+        client_id: 'parallellines-chat', response_type: 'code', scope: 'openid profile',
+        redirect_uri: `${mainOrigin}/chat/oauth/openid/callback`,
+        code_challenge: await oidc.calculatePKCECodeChallenge(oidc.randomPKCECodeVerifier()),
+        code_challenge_method: 'S256',
+      });
+      const response = await new Browser().request(url);
+      assert.ok(response.status === 400 || response.status === 401);
+      assert.equal(response.headers.get('location'), null);
+      assert.equal(authorityCalls.length, callsBefore);
+    });
+
+    await t.test('each client receives its own UserInfo audience; only consented Chat receives refresh', async () => {
+      assert.deepEqual(rps.get(chatClient.clientId).serverMetadata().code_challenge_methods_supported, ['S256']);
       for (const [index, client] of clients.entries()) {
         const flow = await authorization(client, `success-user-${index}`);
         const tokens = await exchange(flow);
@@ -246,9 +261,9 @@ test('three clients: real OIDC protocol and persisted Main binding isolation', a
 
     await t.test('Chat requires offline consent; NewAPI cannot obtain refresh even when it requests offline consent', async () => {
       for (const [client, options] of [
-        [clients[1], { scope: 'openid profile' }],
-        [clients[1], { prompt: '' }],
-        [clients[2], { scope: 'openid profile offline_access', prompt: 'consent' }],
+        [chatClient, { scope: 'openid profile' }],
+        [chatClient, { prompt: '' }],
+        [apiClient, { scope: 'openid profile offline_access', prompt: 'consent' }],
       ]) {
         const flow = await authorization(client, `no-offline-${secret()}`, options);
         const tokens = await exchange(flow);
@@ -260,15 +275,16 @@ test('three clients: real OIDC protocol and persisted Main binding isolation', a
 
     await t.test('UserInfo issuer/audience cannot be replaced by caller headers, query claims, another client or an ID token', async () => {
       for (const client of clients) {
+        const otherClient = client === chatClient ? apiClient : chatClient;
         const flow = await authorization(client, `userinfo-${client.clientId}`);
         const tokens = await exchange(flow);
         const url = new URL(userinfoEndpoint);
-        url.searchParams.set('client_id', clients[1].clientId);
-        url.searchParams.set('aud', clients[1].clientId);
+        url.searchParams.set('client_id', otherClient.clientId);
+        url.searchParams.set('aud', otherClient.clientId);
         url.searchParams.set('iss', 'https://untrusted.invalid');
         const response = await fetch(url, { redirect: 'error', headers: {
           Authorization: `Bearer ${tokens.access_token}`, 'X-Forwarded-Host': 'untrusted.invalid',
-          'X-Client-Id': clients[1].clientId, 'X-OpenWebUI-User-Id': 'another-user',
+          'X-Client-Id': otherClient.clientId, 'X-OpenWebUI-User-Id': 'another-user',
         } });
         assert.equal(response.status, 200);
         const user = await response.json();
@@ -282,12 +298,12 @@ test('three clients: real OIDC protocol and persisted Main binding isolation', a
     });
 
     await t.test('Chat refresh rotates, survives restart, retains its client and cannot extend the original Main expiry', async () => {
-      const flow = await authorization(clients[1], 'chat-refresh-user');
+      const flow = await authorization(chatClient, 'chat-refresh-user');
       const tokens = await exchange(flow);
       const initialRefresh = await provider.RefreshToken.find(tokens.refresh_token);
-      assert.equal(initialRefresh.clientId, clients[1].clientId);
+      assert.equal(initialRefresh.clientId, chatClient.clientId);
       assert.ok(initialRefresh.exp <= flow.identity.auth_expires_at);
-      for (const client of [clients[0], clients[2]]) {
+      for (const client of [apiClient]) {
         await assertTokenRejected(await fetch(endpoint, {
           method: 'POST', redirect: 'error',
           headers: { Authorization: `Basic ${Buffer.from(`${client.clientId}:${client.clientSecret}`).toString('base64')}`, 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -296,24 +312,24 @@ test('three clients: real OIDC protocol and persisted Main binding isolation', a
       }
       restart();
       states.set(flow.identity.binding_id, { ...flow.identity, auth_expires_at: flow.identity.auth_expires_at + 86400 });
-      const refreshed = await oidc.refreshTokenGrant(rps.get(clients[1].clientId), tokens.refresh_token);
+      const refreshed = await oidc.refreshTokenGrant(rps.get(chatClient.clientId), tokens.refresh_token);
       await assertClaims(refreshed, flow);
       assert.notEqual(refreshed.refresh_token, tokens.refresh_token);
       assert.ok((await provider.RefreshToken.find(refreshed.refresh_token)).exp <= flow.identity.auth_expires_at);
       assert.ok((await provider.AccessToken.find(refreshed.access_token)).exp <= flow.identity.auth_expires_at);
-      await assert.rejects(oidc.refreshTokenGrant(rps.get(clients[1].clientId), tokens.refresh_token));
+      await assert.rejects(oidc.refreshTokenGrant(rps.get(chatClient.clientId), tokens.refresh_token));
       // A replay revokes the whole grant, including its replacement refresh token.
-      await assert.rejects(oidc.refreshTokenGrant(rps.get(clients[1].clientId), refreshed.refresh_token));
+      await assert.rejects(oidc.refreshTokenGrant(rps.get(chatClient.clientId), refreshed.refresh_token));
     });
 
     await t.test('Chat refresh observes shortened Main expiry, revocation and subject/binding changes without crossing users', async () => {
-      const control = await authorization(clients[1], 'chat-unaffected');
+      const control = await authorization(chatClient, 'chat-unaffected');
       const controlTokens = await exchange(control);
-      const shortened = await authorization(clients[1], 'chat-shortened');
+      const shortened = await authorization(chatClient, 'chat-shortened');
       const shortTokens = await exchange(shortened);
       const shorterExpiry = Math.floor(Date.now() / 1000) + 45;
       states.set(shortened.identity.binding_id, { ...shortened.identity, auth_expires_at: shorterExpiry });
-      const refreshed = await oidc.refreshTokenGrant(rps.get(clients[1].clientId), shortTokens.refresh_token);
+      const refreshed = await oidc.refreshTokenGrant(rps.get(chatClient.clientId), shortTokens.refresh_token);
       assert.equal(refreshed.claims().pl_auth_exp, shorterExpiry);
       assert.ok(refreshed.claims().exp <= shorterExpiry);
       assert.ok((await provider.RefreshToken.find(refreshed.refresh_token)).exp <= shorterExpiry);
@@ -324,15 +340,15 @@ test('three clients: real OIDC protocol and persisted Main binding isolation', a
         identity => ({ ...identity, sub: 'another-main-user' }),
         identity => ({ ...identity, binding_id: secret() }),
       ].entries()) {
-        const flow = await authorization(clients[1], `chat-revoked-${index}`);
+        const flow = await authorization(chatClient, `chat-revoked-${index}`);
         const tokens = await exchange(flow);
         states.set(flow.identity.binding_id, mutate(flow.identity));
-        await assert.rejects(oidc.refreshTokenGrant(rps.get(clients[1].clientId), tokens.refresh_token));
+        await assert.rejects(oidc.refreshTokenGrant(rps.get(chatClient.clientId), tokens.refresh_token));
         const response = await fetch(userinfoEndpoint, { redirect: 'error', headers: { Authorization: `Bearer ${tokens.access_token}` } });
         assert.equal(response.status, 401);
         assert.equal((await response.json()).sub, undefined);
       }
-      await assertClaims(await oidc.refreshTokenGrant(rps.get(clients[1].clientId), controlTokens.refresh_token), control);
+      await assertClaims(await oidc.refreshTokenGrant(rps.get(chatClient.clientId), controlTokens.refresh_token), control);
     });
 
     await t.test('each client rejects absent and plain PKCE, and another client callback before Main approval', async () => {
@@ -374,14 +390,14 @@ test('three clients: real OIDC protocol and persisted Main binding isolation', a
     });
 
     await t.test('parallel client interactions cannot swap approval codes, browser cookies, or supplied identities', async () => {
-      const left = await begin(clients[1]);
-      const right = await begin(clients[2]);
+      const left = await begin(chatClient);
+      const right = await begin(apiClient);
       assertMainRedirect(left); assertMainRedirect(right);
       const a = approve(left, 'parallel-user-a'), b = approve(right, 'parallel-user-b');
       const callsBefore = authorityCalls.length;
       assert.equal((await finish(right, b.code, { interaction: left.interaction })).status, 403);
       assert.equal((await finish(left, a.code, { origin: 'https://untrusted.invalid' })).status, 403);
-      assert.equal((await finish(left, a.code, { extra: { client_id: clients[2].clientId, sub: b.identity.sub } })).status, 403);
+      assert.equal((await finish(left, a.code, { extra: { client_id: apiClient.clientId, sub: b.identity.sub } })).status, 403);
       assert.equal(authorityCalls.length, callsBefore, 'Malformed browser requests must not reach Main exchange');
       assert.equal((await finish(right, a.code)).status, 403, 'Main approval is bound to its interaction');
       for (const [flow, approval] of [[left, a], [right, b]]) {
@@ -394,37 +410,37 @@ test('three clients: real OIDC protocol and persisted Main binding isolation', a
 
     await t.test('existing OP session cannot silently select another Main user or client', async () => {
       const browser = new Browser();
-      const first = await authorization(clients[0], 'browser-user-a', { browser });
+      const first = await authorization(apiClient, 'browser-user-a', { browser });
       await assertClaims(await exchange(first), first);
-      const second = await authorization(clients[1], 'browser-user-b', { browser });
+      const second = await authorization(chatClient, 'browser-user-b', { browser });
       await assertClaims(await exchange(second), second);
       assert.notEqual(first.identity.binding_id, second.identity.binding_id);
     });
 
     await t.test('changed Main subject, changed binding and inactive binding fail closed for only their grant', async () => {
-      const unaffected = await authorization(clients[0], 'unaffected-legacy');
-      const legacyTokens = await exchange(unaffected);
+      const unaffected = await authorization(apiClient, 'unaffected-newapi');
+      const controlTokens = await exchange(unaffected);
       for (const [index, mutation] of [
         identity => ({ ...identity, sub: 'wrong-main-user' }),
         identity => ({ ...identity, binding_id: secret() }),
         () => ({ active: false }),
         identity => ({ ...identity, auth_expires_at: Math.floor(Date.now() / 1000) - 1 }),
       ].entries()) {
-        const flow = await authorization(clients[1 + index % 2], `tampered-user-${index}`);
+        const flow = await authorization(clients[index % clients.length], `tampered-user-${index}`);
         const tokens = await exchange(flow);
         states.set(flow.identity.binding_id, mutation(flow.identity));
         const response = await fetch(userinfoEndpoint, { headers: { Authorization: `Bearer ${tokens.access_token}` }, redirect: 'error' });
         assert.ok(response.status === 400 || response.status === 401);
         assert.equal((await response.json()).sub, undefined);
       }
-      await assertClaims(legacyTokens, unaffected);
+      await assertClaims(controlTokens, unaffected);
     });
 
-    await t.test('opted-in clients receive current verified profile without changing identity or legacy claims', async () => {
-      clients[1].profileSyncEnabled = true;
-      clients[2].profileSyncEnabled = true;
+    await t.test('opted-in clients receive current verified profile without changing identity or audience', async () => {
+      chatClient.profileSyncEnabled = true;
+      apiClient.profileSyncEnabled = true;
       try {
-        for (const client of clients.slice(1)) {
+        for (const client of clients) {
           const flow = await begin(client, { scope: 'openid profile email' });
           const approval = approve(flow, 'profile-sub');
           Object.assign(approval.identity, { username: 'original-user', name: 'Original',
@@ -448,35 +464,13 @@ test('three clients: real OIDC protocol and persisted Main binding isolation', a
           assert.equal(rejected.status, 401);
           assert.equal((await rejected.json()).email, undefined);
         }
-        const legacy = await authorization(clients[0], 'legacy-profile-unchanged');
-        const legacyTokens = await exchange(legacy);
-        assert.equal(legacyTokens.claims().preferred_username, 'pl-legacy-profile-unchanged');
-        assert.equal(legacyTokens.claims().email, undefined);
       } finally {
-        clients[1].profileSyncEnabled = false;
-        clients[2].profileSyncEnabled = false;
+        chatClient.profileSyncEnabled = false;
+        apiClient.profileSyncEnabled = false;
       }
     });
 
-    await t.test('legacy refresh remains bound to its client and survives provider/store restart', async () => {
-      const flow = await authorization(clients[0], 'legacy-restart-user');
-      const tokens = await exchange(flow);
-      for (const client of clients.slice(1)) {
-        const response = await fetch(endpoint, {
-          method: 'POST', redirect: 'error',
-          headers: { Authorization: `Basic ${Buffer.from(`${client.clientId}:${client.clientSecret}`).toString('base64')}`, 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: tokens.refresh_token }),
-        });
-        await assertTokenRejected(response);
-      }
-      restart();
-      const refreshed = await oidc.refreshTokenGrant(rps.get(CLIENT_ID), tokens.refresh_token);
-      assert.equal(refreshed.claims().sub, flow.identity.sub);
-      assert.equal(refreshed.claims().pl_binding, flow.identity.binding_id);
-      assert.equal(refreshed.claims().aud, CLIENT_ID);
-      assert.notEqual(refreshed.refresh_token, tokens.refresh_token);
-      await assert.rejects(oidc.refreshTokenGrant(rps.get(CLIENT_ID), tokens.refresh_token));
-    });
+
   } finally {
     if (opServer) await close(opServer);
     await close(mainServer);

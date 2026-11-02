@@ -5,11 +5,10 @@
 The existing main site must provide `/auth/chat`, its authenticated identity
 exchange/session API, and the `/auth/oidc` proxy route. This repository does not
 replace the main-site application. The bridge retains that service protocol and
-registers three exact callbacks; separate client secrets are required:
+registers two exact callbacks; separate client secrets are required:
 
 | Client | Callback | Refresh |
 | --- | --- | --- |
-| `parallellines-chat` | `https://pingxingxian.space/chat/oauth/openid/callback` | enabled |
 | `parallellines-openwebui` | `https://chat.pingxingxian.space/oauth/oidc/login/callback` | enabled with offline consent |
 | `parallellines-newapi` | `https://api.pingxingxian.space/oauth/pingxingxian` | disabled |
 
@@ -20,7 +19,7 @@ for New API; it does not claim New API validates ID-token nonces.
 
 Chat requests `openid profile offline_access` and native
 `OAUTH_AUTHORIZE_PARAMS={"prompt":"consent"}`. Both are required for a Chat refresh
-token. Legacy refresh behavior is unchanged; the New API login client cannot
+token. The retired LibreChat RP is not registered; the New API login client cannot
 obtain a refresh token. Every refresh checks the Main binding again, rotates the
 token, and remains bounded by the original Main expiry. Revocation, identity
 change, expiry, or an unavailable Main authority fails closed. Users with an
@@ -35,7 +34,7 @@ token signing and audiences are unchanged. `pl_auth_exp` is integer epoch second
 `pl_binding` is an opaque Main-session binding. The relay must accept only
 `aud=parallellines-openwebui`, never legacy or New API login access tokens.
 
-Preserve existing issuer signing keys, cookie keys, database, and legacy secrets.
+Preserve existing issuer signing keys, cookie keys, database, and shared service secrets.
 Give each new relying party its own secret. The example files are placeholders,
 not safe runtime secrets. Keep secret files mode 0600 and containing directories
 0700; signing JWKS must be a regular non-symlink file and readable by the bridge's
@@ -47,6 +46,11 @@ administrator settings; setting environment variables alone may leave old DB
 values in effect. Preserve unrelated settings. Never merge accounts by email.
 Bind an administrator only after validating their stable main-site subject and
 existing admin role. Keep a recovery administrator until handover is verified.
+
+The Main bridge protocol still uses internal `client_id=parallellines-chat`;
+that authority field is not a registered OIDC RP and must not be renamed as part
+of old-client cleanup. See [legacy retirement](legacy-retirement.md) for the
+standalone issuer deployment and archived data boundary.
 
 ## Native per-user model connection
 
