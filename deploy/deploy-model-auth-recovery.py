@@ -35,8 +35,9 @@ class RecoveryRelease(base.Release):
         return context, image_id
 
     def update(self, service, context):
-        super().update(service, context)
-        service['build']['dockerfile'] = 'Dockerfile.recovery'
+        base.check(service.get('image') == self.s.get('expected_compose_image'), 'compose_image_changed')
+        service['image'] = self.s['new_image']
+        service['build'] = {'context': str(context), 'dockerfile': 'Dockerfile.recovery'}
 
 
 if __name__ == '__main__':
