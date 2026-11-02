@@ -108,6 +108,15 @@ parameters unsupported while reasoning is enabled. See
 [Responses release and recovery](responses-release.md) for the image and scoped
 server-maintenance path when no administrator credential is available.
 
+## Homepage performance and internal routing
+
+For the scoped static CDN policy, on-demand formatted-copy module, weak-network
+session restoration and optional same-host HTTPS routing, see
+[Chat performance](chat-performance.md). These changes do not cache login/API
+responses, weaken TLS/identity checks or change user/model billing. Internal
+host mappings are optional and must not be applied to standalone hosts without
+the existing trusted Nginx on that host.
+
 ## Release and deploy
 
 For the reviewed `sso-recovery-20261030` to native-refresh transition, use

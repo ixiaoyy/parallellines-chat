@@ -1,0 +1,5 @@
+ARG CHAT_BASE_IMAGE
+FROM ${CHAT_BASE_IMAGE}
+# 增量镜像保留当前全部后端补丁、密钥配置和原版 Pyodide 文件。
+COPY frontend-build/ /app/build/
+COPY frontend-build-manifest.json /app/frontend-performance-manifest.json

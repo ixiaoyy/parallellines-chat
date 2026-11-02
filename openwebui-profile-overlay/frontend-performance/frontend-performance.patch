@@ -1,0 +1,287 @@
+diff --git a/src/lib/utils/index.ts b/src/lib/utils/index.ts
+--- a/src/lib/utils/index.ts
++++ b/src/lib/utils/index.ts
+@@ -22,10 +22,6 @@
+ 
+ import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.mjs?url';
+ 
+-import { marked } from 'marked';
+-import markedExtension from '$lib/utils/marked/extension';
+-import markedKatexExtension from '$lib/utils/marked/katex-extension';
+-import hljs from 'highlight.js';
+ import { decode } from 'html-entities';
+ 
+ //////////////////////////
+@@ -540,91 +536,22 @@
+ 
+ export const copyToClipboard = async (text, html = null, formatted = false) => {
+ 	if (formatted) {
+-		let styledHtml = '';
+-		if (!html) {
+-			const options = {
+-				throwOnError: false,
+-				highlight: function (code, lang) {
+-					const language = hljs.getLanguage(lang) ? lang : 'plaintext';
+-					return hljs.highlight(code, { language }).value;
+-				}
+-			};
+-			marked.use(markedKatexExtension(options));
+-			marked.use(markedExtension(options));
+-			// DEVELOPER NOTE: Go to `$lib/components/chat/Messages/Markdown.svelte` to add extra markdown extensions for rendering.
+-
+-			const htmlContent = marked.parse(text);
+-
+-			// Add basic styling to make the content look better when pasted
+-			styledHtml = `
+-			<div>
+-				<style>
+-					pre {
+-						background-color: #f6f8fa;
+-						border-radius: 0.375rem;
+-						padding: 1rem;
+-						overflow: auto;
+-					}
+-					code {
+-						font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+-						font-size: 0.875rem;
+-					}
+-					.hljs-keyword { color: #d73a49; }
+-					.hljs-string { color: #032f62; }
+-					.hljs-comment { color: #6a737d; }
+-					.hljs-function { color: #6f42c1; }
+-					.hljs-number { color: #005cc5; }
+-					.hljs-operator { color: #d73a49; }
+-					.hljs-class { color: #6f42c1; }
+-					.hljs-title { color: #6f42c1; }
+-					.hljs-params { color: #24292e; }
+-					.hljs-built_in { color: #005cc5; }
+-					blockquote {
+-						border-left: 4px solid #dfe2e5;
+-						padding-left: 1rem;
+-						color: #6a737d;
+-						margin-left: 0;
+-						margin-right: 0;
+-					}
+-					table {
+-						border-collapse: collapse;
+-						width: 100%;
+-						margin-bottom: 1rem;
+-					}
+-					table, th, td {
+-						border: 1px solid #dfe2e5;
+-					}
+-					th, td {
+-						padding: 0.5rem 0.75rem;
+-					}
+-					th {
+-						background-color: #f6f8fa;
+-					}
+-				</style>
+-				${htmlContent}
+-			</div>
+-		`;
+-		} else {
+-			// If HTML is provided, use it directly
+-			styledHtml = html;
+-		}
+-
+-		// Create a blob with HTML content
+-		const blob = new Blob([styledHtml], { type: 'text/html' });
+-
+ 		try {
+-			// Create a ClipboardItem with HTML content
++			// 富文本/完整高亮依赖仅在实际复制时加载；先调用 write，保留 Safari 的用户手势权限。
++			const htmlBlob = html
++				? new Blob([html], { type: 'text/html' })
++				: import('$lib/utils/formattedClipboard').then(({ createFormattedClipboardBlob }) =>
++						createFormattedClipboardBlob(text)
++					);
+ 			const data = new ClipboardItem({
+-				'text/html': blob,
++				'text/html': htmlBlob,
+ 				'text/plain': new Blob([text], { type: 'text/plain' })
+ 			});
+-
+-			// Write to clipboard
+ 			await navigator.clipboard.write([data]);
+ 			return true;
+ 		} catch (err) {
+ 			console.error('Error copying formatted content:', err);
+-			// Fallback to plain text
++			// 动态资源或格式化写入失败，沿用原有纯文本回退和布尔返回语义。
+ 			return await copyToClipboard(text);
+ 		}
+ 	} else {
+diff --git a/src/lib/apis/auths/index.ts b/src/lib/apis/auths/index.ts
+--- a/src/lib/apis/auths/index.ts
++++ b/src/lib/apis/auths/index.ts
+@@ -82,32 +82,46 @@
+ 	return res;
+ };
+ 
++/** 共用原生会话读取；HTTP 状态仅作为失败依据，不把失败结果当作已登录用户。 */
++const requestSessionUser = async (token: string, signal?: AbortSignal) => {
++	const response = await fetch(`${WEBUI_API_BASE_URL}/auths/`, {
++		method: 'GET',
++		headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
++		credentials: 'include',
++		...(signal ? { signal } : {})
++	});
++	if (!response.ok) {
++		const payload = await response.json().catch(() => null);
++		throw Object.assign(new Error(typeof payload?.detail === 'string' ? payload.detail : 'Session verification failed'), {
++			status: response.status,
++			detail: payload?.detail
++		});
++	}
++	return response.json();
++};
++
++/** 旧调用方保持原语义：网络异常返回 null，服务端 detail 错误继续向外抛出。 */
+ export const getSessionUser = async (token: string) => {
+-	let error = null;
+-
+-	const res = await fetch(`${WEBUI_API_BASE_URL}/auths/`, {
+-		method: 'GET',
+-		headers: {
+-			'Content-Type': 'application/json',
+-			Authorization: `Bearer ${token}`
+-		},
+-		credentials: 'include'
+-	})
+-		.then(async (res) => {
+-			if (!res.ok) throw await res.json();
+-			return res.json();
+-		})
+-		.catch((err) => {
+-			console.error(err);
+-			error = err.detail;
+-			return null;
+-		});
+-
+-	if (error) {
+-		throw error;
+-	}
+-
+-	return res;
++	try {
++		return await requestSessionUser(token);
++	} catch (error) {
++		console.error(error);
++		if (error?.detail) throw error.detail;
++		return null;
++	}
++};
++
++/** 首页恢复登录状态专用；12 秒总时限，失败抛出含 HTTP 状态的错误，绝不清除令牌。 */
++export const getSessionUserForBootstrap = async (token: string) => {
++	const controller = new AbortController();
++	const timer = setTimeout(() => controller.abort(), 12000);
++	try {
++		const sessionUser = await requestSessionUser(token, controller.signal);
++		if (!sessionUser) throw new Error('Invalid session response');
++		return sessionUser;
++	} finally {
++		clearTimeout(timer);
++	}
+ };
+ 
+ export const ldapUserSignIn = async (user: string, password: string) => {
+diff --git a/src/routes/+layout.svelte b/src/routes/+layout.svelte
+--- a/src/routes/+layout.svelte
++++ b/src/routes/+layout.svelte
+@@ -54,7 +54,7 @@
+ 	import 'tippy.js/dist/tippy.css';
+ 
+ 	import { executeToolServer, getBackendConfig, getModels, getVersion } from '$lib/apis';
+-	import { getSessionUser, updateUserTimezone, userSignOut } from '$lib/apis/auths';
++	import { getSessionUserForBootstrap, updateUserTimezone, userSignOut } from '$lib/apis/auths';
+ 	import { getAllTags } from '$lib/apis/chats';
+ 	import { chatCompletion } from '$lib/apis/openai';
+ 	import { isTemporaryChatId } from '$lib/utils/chatId';
+@@ -122,6 +122,7 @@
+ 	const bc = new BroadcastChannel('active-tab-channel');
+ 
+ 	let loaded = false;
++	let sessionRestoreError = false;
+ 	let tokenTimer = null;
+ 	let isAuthRedirectInProgress = false;
+ 
+@@ -1364,8 +1365,14 @@
+ 
+ 				if (localStorage.token) {
+ 					// Get Session User Info
+-					const sessionUser = await getSessionUser(localStorage.token).catch((error) => {
+-						toast.error(`${error}`);
++					const sessionUser = await getSessionUserForBootstrap(localStorage.token).catch((error) => {
++						if (error?.status === 401) {
++							toast.error(error.message);
++						} else {
++							// 弱网/服务暂不可用时保留登录信息，但不渲染未经验证的账号页面。
++							sessionRestoreError = true;
++							console.error('Session verification failed:', error?.status ?? 'network');
++						}
+ 						return null;
+ 					});
+ 
+@@ -1392,7 +1399,7 @@
+ 								})
+ 								.catch(() => {});
+ 						}
+-					} else {
++					} else if (!sessionRestoreError) {
+ 						localStorage.removeItem('token');
+ 						await user.set(null);
+ 					}
+@@ -1511,7 +1518,21 @@
+ {/if}
+ 
+ {#if loaded}
+-	{#if mfaManagement}
++	{#if sessionRestoreError}
++		<main id="main-content" class="flex min-h-screen items-center justify-center px-5 py-10">
++			<div class="w-full max-w-sm text-center">
++				<p role="alert" class="text-sm text-gray-600 dark:text-gray-300">
++					{$i18n.t('Session verification is temporarily unavailable.')}
++				</p>
++				<p class="mt-2 text-xs text-gray-500">
++					{$i18n.t('Check your connection and retry without signing out.')}
++				</p>
++				<button type="button" class="mt-4 rounded-full bg-gray-100 px-5 py-2 text-sm text-black hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-100" on:click={() => location.reload()}>
++					{$i18n.t('Retry')}
++				</button>
++			</div>
++		</main>
++	{:else if mfaManagement}
+ 		<MfaManagement flow={mfaManagement} onClose={() => (mfaManagement = null)} />
+ 	{:else if $isApp}
+ 		<div class="flex flex-row h-screen">
+@@ -1526,7 +1547,7 @@
+ 	{/if}
+ {/if}
+ 
+-{#if $config?.features.enable_community_sharing}
++{#if $config?.features.enable_community_sharing && !sessionRestoreError}
+ 	<SyncStatsModal bind:show={showSyncStatsModal} eventData={syncStatsEventData} />
+ {/if}
+ 
+diff --git a/src/lib/i18n/locales/en-US/translation.json b/src/lib/i18n/locales/en-US/translation.json
+--- a/src/lib/i18n/locales/en-US/translation.json
++++ b/src/lib/i18n/locales/en-US/translation.json
+@@ -1,4 +1,6 @@
+ {
++	"Session verification is temporarily unavailable.": "Session verification is temporarily unavailable.",
++	"Check your connection and retry without signing out.": "Check your connection and retry without signing out.",
+ 	"- usage not recorded": "- usage not recorded",
+ 	"- usage not recorded · * partial usage": "- usage not recorded · * partial usage",
+ 	"-1 for no limit, or a positive integer for a specific limit": "",
+diff --git a/src/lib/i18n/locales/zh-CN/translation.json b/src/lib/i18n/locales/zh-CN/translation.json
+--- a/src/lib/i18n/locales/zh-CN/translation.json
++++ b/src/lib/i18n/locales/zh-CN/translation.json
+@@ -1,4 +1,6 @@
+ {
++	"Session verification is temporarily unavailable.": "暂时无法验证登录状态。",
++	"Check your connection and retry without signing out.": "请检查网络后重试，无需先退出账号。",
+ 	"- usage not recorded": "",
+ 	"- usage not recorded · * partial usage": "",
+ 	"-1 for no limit, or a positive integer for a specific limit": "-1 表示无限制，正整数表示具体限制额度",

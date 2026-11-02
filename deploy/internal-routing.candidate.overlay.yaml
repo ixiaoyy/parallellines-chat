@@ -1,0 +1,10 @@
+# 仅用于已经确认与可信 Nginx 共用同一 Docker 主机的现有部署。
+# 仅改变容器内域名解析，HTTPS 主机名、证书、OAuth issuer 和公开地址保持不变。
+services:
+  openwebui:
+    extra_hosts:
+      - "pingxingxian.space:host-gateway"
+      - "api.pingxingxian.space:host-gateway"
+  newapi:
+    extra_hosts:
+      - "pingxingxian.space:host-gateway"

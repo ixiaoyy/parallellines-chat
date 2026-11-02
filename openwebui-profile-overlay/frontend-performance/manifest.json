@@ -1,0 +1,30 @@
+{
+  "upstream_commit": "f7ac7ee10962ddec0017f5c29b6740d9b9c5faca",
+  "upstream_archive_sha256": "243bbdae416e8fd8adbdc103fa06106d53df460c103cfcb3df0c516a30d2c6f9",
+  "files": {
+    "src/lib/utils/index.ts": {
+      "before_sha256": "8fe1fafa5ddfb11ae7e3878acde3e0432eb384424b96f1808d585eddc7aa746f",
+      "after_sha256": "f19ac6d2e8c5140848d9b91403bb50b5cb92e8322dacfd92dc5ed3800c1c7dce"
+    },
+    "src/lib/apis/auths/index.ts": {
+      "before_sha256": "548c2b271881d96edff637739f58fcf8285cf82bb1e02f8d633f6a6463a1d805",
+      "after_sha256": "0dad97471cba5fc0bbffd9ed1d5f2bdf5c38fe9bf3668f1cf2cd41510a9b1807"
+    },
+    "src/routes/+layout.svelte": {
+      "before_sha256": "30dfcee659506703a96318b16848ce91073650f07fb829d21075935963d9cd9c",
+      "after_sha256": "99f1c5c9f951cafd0a88618a3eeb4b613b43280d83e5f352e8b370a7b46fee0d"
+    },
+    "src/lib/i18n/locales/en-US/translation.json": {
+      "before_sha256": "59b54553cf75c76bb45af25c896370c8522e1db2a1afa00d9c35c2b9d8a301ed",
+      "after_sha256": "1db54dd15f1a60723dd1cefdf212fdf67ed930f2ae47d477fbf94627f1bd0ece"
+    },
+    "src/lib/i18n/locales/zh-CN/translation.json": {
+      "before_sha256": "d0dbf0a9984e58ad158f8f8ce5a9eb3071a3e7a97333b0f461176f51efb682d3",
+      "after_sha256": "11d16c88782f8296a2595ea9511486423cfa90183c789db7470dc436b6b57dc6"
+    },
+    "src/lib/utils/formattedClipboard.ts": {
+      "before_sha256": null,
+      "after_sha256": "de8d73229178843cfa1c6af18d6e80910164d4c8495d9be04e3e4bf5d4385590"
+    }
+  }
+}

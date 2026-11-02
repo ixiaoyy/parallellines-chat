@@ -1,0 +1,5 @@
+# 可选同机优化；不可用于 Nginx 位于其他主机的独立身份桥部署。
+services:
+  chat-oidc:
+    extra_hosts:
+      - "pingxingxian.space:host-gateway"
