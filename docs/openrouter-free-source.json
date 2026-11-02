@@ -1,0 +1,20 @@
+{
+  "application": "Open WebUI v0.12.5 plus ParallelLines overlays",
+  "upstream_commit": "f7ac7ee10962ddec0017f5c29b6740d9b9c5faca",
+  "integration_commit": "974ea43d399dd20bca2dee25abc39f920b6ea3cb",
+  "backend_image": "parallellines-chat:openrouter-free-20261102-974ea43",
+  "backend_export_sha256": "c3d2dcb91ceba9b8c823b8e38e68679bcff8422730b1151b5dd08ea953acfe90",
+  "frontend_index_sha256": "3f5f1775babd728afe32e52f7626569e36ed91583fa324ae76e8d29efe33ee58",
+  "frontend_source_basis": "existing performance-build source matching the unchanged deployed frontend index",
+  "frontend_modified_by_free_overlay": false,
+  "runtime_credentials_databases_and_user_data_included": false,
+  "source_files": 5200,
+  "excluded_runtime_file_names": [],
+  "file": "parallellines-chat-openrouter-free-20261102-corresponding-source.tar.gz",
+  "bytes": 15411538,
+  "sha256": "ee21045c62c7d471d1c99bb5ce4bc629d722096d60be7dd35ca6fc892dd31ad1",
+  "url": "https://github.com/ixiaoyy/parallellines-chat/releases/download/openrouter-free-20261102/parallellines-chat-openrouter-free-20261102-corresponding-source.tar.gz",
+  "public_anonymous_download_verified": true,
+  "deployed_on": "2026-11-02",
+  "user_reported_chat_ok": true
+}

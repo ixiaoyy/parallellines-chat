@@ -5,6 +5,17 @@
 现有 `gpt-6-luna`、`gpt-6.1-terra`、`gpt-6.1-sol`、默认模型及其计费规则保持不动。
 不新增 Chat 共享 API Key，不接入被上游限制的 OpenCode 免费模型。
 
+## 2026-11-02 发布验收
+
+配套 `pkce.8` 网关、此 Chat 镜像及免费模型读取授权已启用。用户重新使用平行线账号授权后
+确认聊天正常；服务器核对该次验收账号四条调用均为 `openrouter/free`、站内扣费均为零，
+原三个付费模型、默认项、全局后台任务和 API 定价配置保持不变。没有发起付费模型实测。
+真实零余额账号、新普通用户未专门进行线上验收；相关路由、权限和余额边界已有隔离用例。
+
+[本版完整对应源码](https://github.com/ixiaoyy/parallellines-chat/releases/download/openrouter-free-20261102/parallellines-chat-openrouter-free-20261102-corresponding-source.tar.gz)
+已公开并核对匿名下载及摘要，包含匹配未变前端的完整源文件、实际增量镜像中的后端源码和
+固定集成提交；不含密钥、数据库或用户数据。元数据见 `openrouter-free-source.json`。
+
 ## 数据流与实施范围
 
 沿用 `Chat → https://api.pingxingxian.space/oauth-relay/v1 → OpenRouter`：
@@ -169,4 +180,5 @@ Python 默认读取已有 `.build/performance-build/open-webui-f7ac7ee10962ddec0
    不回退 New API 到缺少内部凭据/计费保护的旧版本，不恢复整库、余额或身份快照。
 
 OpenRouter 免费池共享上游账号限额，自动选择的模型会变化。接口限流、免费模型撤下或上游失败
-必须明确返回错误，不能自动换成付费模型。新 Chat 与上游真实 Responses 链路仍需发布授权后验收。
+必须明确返回错误，不能自动换成付费模型。本次当前账号的真实 Responses 聊天已由用户确认正常，
+不据此宣称所有普通用户、零余额账号或全部上游免费模型均已逐项通过线上验收。
