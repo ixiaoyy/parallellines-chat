@@ -68,11 +68,29 @@ HTTP 代理，需要先确认它不会绕过这些内网解析。本次目标容
 1. 取固定上游提交 `f7ac7ee10962ddec0017f5c29b6740d9b9c5faca`，保留锁文件与许可证。
 2. 对新源码目录运行 `frontend-performance/apply.py`，使用已记录的前后文件清单。
    不自动叠加尚未上线的授权提示补丁，不覆盖其他工作。
-3. 按现有锁文件安装构建依赖，使用 `build-performance-frontend.mjs PREPARED_SOURCE NEW_OUTPUT`。
+3. 在准备好的源码目录按现有锁文件安装构建依赖；下载缓存放在源码目录外，跨准备目录复用：
+
+   ```sh
+   npm ci --force --ignore-scripts --prefer-offline --cache "$HOME/.cache/parallellines-chat/npm" --no-audit --no-fund
+   ```
+
+   `npm ci` 仍以原锁文件校验和安装，不把另一版本的 `node_modules` 当作有效命中；不改锁文件。
+   已有匹配的准备目录可直接复用依赖；然后从本仓库执行
+   `node deploy/build-performance-frontend.mjs PREPARED_SOURCE NEW_OUTPUT`。
    它执行交付必需的正常生产构建，不跑测试、lint 或独立验证构建，不重下 Pyodide。
-   可通过 `FRONTEND_BUILD_HEAP_MB` 显式限制堆内存；本次 3 GB 上限不足，调整至 6 GB 后构建成功。
-4. 提交并推送已审核源码。只上传该提交的源码归档、前端发布目录及其完整清单；保留旧镜像。
-5. 使用 `deploy-performance.py scope.json bridge|newapi|chat` 分阶段激活。
+   可通过 `FRONTEND_BUILD_HEAP_MB` 显式限制堆内存；前次构建 3 GB 上限不足，调整至 6 GB 后构建成功。
+4. 获得当次提交、推送和发布授权后，只上传已审核源码归档、`frontend-build/`、
+   `frontend-build-manifest.json`、Dockerfile 及 `.dockerignore`；保留旧镜像。
+   私有 `frontend-debug/` 不上传、不作为镜像内容或公开静态资源。
+5. 本次纯前端发布使用 `deploy/deploy-frontend-performance.py scope.json`。
+   它复用已有目标服务 CAS、私有备份、就绪检查和恢复，只替换 Chat 的 `image/build`，
+   不合并 `extra_hosts`、环境、身份、免费模型开关或其他原生配置。
+   `frontend_context` 仅含公开目录、公开清单、`.dockerignore` 与已提交的 `Dockerfile.performance`；
+   从实际 live 镜像 ID 建立唯一基线别名，叠加前端后验证完整清单与编译映射移除。
+   `source_root=/app`、`interpreter=python`；`expected_source` 保留实际旧首页及后端/Pyodide 摘要，
+   激活后仅更新首页预期值，其他基线继续核对。先从正常只读 preflight 取得实际服务与版本，不套旧值。
+6. 仅在另行批准内网解析阶段时，才使用原 `deploy-performance.py scope.json bridge|newapi|chat`。
+   该旧入口会合并解析配置，不能无条件代替上述纯前端发布器。
    scope 顶层沿用现有 `source`、`receipts`，各阶段沿用当前项目、Compose 文件列表、
    env 文件路径、工作目录、服务、容器、镜像和目标服务文件。
    `routing_hosts` 为批准域名到免费检查路径的映射，`expected_private_address` 必须来自实际宿主机网关。
@@ -83,6 +101,29 @@ HTTP 代理，需要先确认它不会绕过这些内网解析。本次目标容
 只有本阶段目标服务未被其他维护改动时才恢复；不覆盖其他服务，不回灌数据库，
 不改环境中的账号凭据。成功阶段之间向后兼容，不因后续失败盲目重启已经成功的组件。
 Chat 增量镜像保留当前后端补丁及 Pyodide，并逐文件读回整个前端清单，包含懒加载资源。
+
+### 私有调试产物与 Docker 缓存
+
+两个前端构建入口均用 Vite 的隐藏 source map：映射仍生成，但公开 JS 不声明
+`sourceMappingURL`。共用打包器将 `.map` 放入 `frontend-debug/`，普通资源按原字节写入
+`frontend-build/`；公开清单只列公开文件，私有 `source-map-manifest.json` 保存映射摘要、
+上游/补丁来源及对应公开清单摘要。两种产物一起保留供排障，已有产物拒绝覆盖。
+私有目录使用受限文件权限；Windows 上仍须放在仅当前用户可访问的目录，不放入共享文件夹。
+
+生成的性能构建上下文与 overlay 的 `.dockerignore` 都排除 `frontend-debug/`。
+镜像只复制公开目录，并删除继承基线中 `/_app/` 下的旧 `.map`，保留旧哈希 JS/CSS 与完整 Pyodide。
+旧映射所在的基础镜像层不会因此缩小；收益是本次新静态层与后续传输不再重复包含映射，
+并且新运行镜像不再公开这些映射，不能把映射原始大小当作首屏下载收益。
+
+身份桥完整构建要求 BuildKit：依赖文件先复制，`npm ci` 的下载缓存使用独立 cache mount，
+业务源码变化不使依赖安装层失效；锁文件变化时仍执行安装，但可复用已下载包，缓存不进入镜像。
+Chat 的性能/后端增量继续基于已确认镜像离线构建，不重装后端或前端依赖。
+免费 Chat 发布器的 `--no-cache` 保留，它需要补丁 RUN 输出的五个文件摘要作为回执；
+不能单独删除该参数使缓存命中时缺失核验依据。本地构建缓存状态未代表服务器实际命中情况。
+
+本地定向检查入口：`node --test deploy/frontend-build-artifacts.test.mjs`。
+它检查公开/私有拆分、摘要关联、旧产物保护、Pyodide 保留及构建配置；
+不能替代 Docker 镜像构建、线上资源检查或真实用户手机验收。
 
 上线验证仅检查必要的 CDN 缓存/动态绕过、运行文件和私网 HTTPS 路径。
 服务器内耗时、桌面公网耗时不等同于用户手机运营商链路，手机实际体验及真实账号

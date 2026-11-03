@@ -1,0 +1,30 @@
+{
+  "format": 1,
+  "upstream_commit": "f7ac7ee10962ddec0017f5c29b6740d9b9c5faca",
+  "audited_configs": {
+    "vite.config.ts": "79bcc6a57ebef75aa3565349f8c8fdde068176a52de3221b210054571f1a6138",
+    "svelte.config.js": "2b0e76c2ecec35baadbb0a8b6320e7e4795019cbd5e8f0422da08d24814e8ec7",
+    "postcss.config.js": "a2c7b2b9765eeec9384a84b101df00b777fac2c027433ba2b88708c5809221b4",
+    "tailwind.config.js": "79ad260dc1570ec7a6b9e44179a66e5c5b0b7f81ac29019282bb4ba1028de81a",
+    "tsconfig.json": "b23ed731809ee02ac1fb3f75225842ebe9fa3c7cccd64857cec0107169864777",
+    "package.json": "3dad273d8f160ecf9f255d345dd0a1de17413a018cfec12260674dfbbb816bbf",
+    "scripts/build-info.js": "a8948fe78ef5d5d8dc48d3c8dfea9e65fa416f0b9ecaa3afcf70a633fd733897",
+    "scripts/encryption/artifact.mjs": "4d6e0f3221e0088cd8eb919e2ddad8e925991db783e5bac6bd8f3eb1802321ea",
+    "src/routes/+layout.js": "4bcddb9162e2e0d32dfa2aae01f69240e8f3f95dddfcb1f249820a63db980b1f"
+  },
+  "source_directories": [
+    "src",
+    "static",
+    "scripts",
+    "crypto/encryption"
+  ],
+  "root_files": [
+    "package.json",
+    "package-lock.json",
+    "vite.config.ts",
+    "svelte.config.js",
+    "postcss.config.js",
+    "tailwind.config.js",
+    "tsconfig.json"
+  ]
+}

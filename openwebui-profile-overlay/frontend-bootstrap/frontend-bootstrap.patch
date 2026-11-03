@@ -1,0 +1,502 @@
+--- a/src/lib/apis/index.ts
++++ b/src/lib/apis/index.ts
+@@ -22,11 +22,13 @@
+ 
+ // Every request sent from here is a petition. May it reach
+ // the one for whom it was intended, and return answered.
++// signal 仅供启动页取消读请求；未传时保持既有调用方的参数与错误合同。
+ export const getModels = async (
+ 	token: string = '',
+ 	connections: object | null = null,
+ 	base: boolean = false,
+-	refresh: boolean = false
++	refresh: boolean = false,
++	signal?: AbortSignal
+ ) => {
+ 	const searchParams = new URLSearchParams();
+ 	if (refresh) {
+@@ -38,6 +40,7 @@
+ 		`${WEBUI_BASE_URL}/api/models${base ? '/base' : ''}?${searchParams.toString()}`,
+ 		{
+ 			method: 'GET',
++			...(signal ? { signal } : {}),
+ 			headers: {
+ 				Accept: 'application/json',
+ 				'Content-Type': 'application/json',
+@@ -50,6 +53,7 @@
+ 			return res.json();
+ 		})
+ 		.catch((err) => {
++			if (signal?.aborted) throw signal.reason;
+ 			error = err;
+ 			console.error(err);
+ 			return null;
+@@ -100,11 +104,12 @@
+ 						} else {
+ 							requests.push(
+ 								(async () => {
+-									return await getOpenAIModelsDirect(url, OPENAI_API_KEYS[idx])
++									return await getOpenAIModelsDirect(url, OPENAI_API_KEYS[idx], signal)
+ 										.then((res) => {
+ 											return res;
+ 										})
+ 										.catch((err) => {
++											if (signal?.aborted) throw signal.reason;
+ 											return {
+ 												object: 'list',
+ 												data: [],
+@@ -1473,12 +1478,14 @@
+ 	return res;
+ };
+ 
+-export const getBackendConfig = async () => {
++// signal 同时约束配置读取和原有 forward-auth 重定向探测，不改变默认调用。
++export const getBackendConfig = async (signal?: AbortSignal) => {
+ 	let error = null;
+ 
+ 	const res = await fetch(`${WEBUI_BASE_URL}/api/config`, {
+ 		method: 'GET',
+ 		credentials: 'include',
++		...(signal ? { signal } : {}),
+ 		headers: {
+ 			'Content-Type': 'application/json'
+ 		}
+@@ -1494,6 +1501,7 @@
+ 		});
+ 
+ 	if (error) {
++		if (signal?.aborted) throw signal.reason;
+ 		// When a forward-auth proxy (e.g. Authentik/Traefik) intercepts the
+ 		// request and redirects to an external login page, the browser blocks
+ 		// the cross-origin redirect for fetch() and throws a TypeError.
+@@ -1507,6 +1515,7 @@
+ 					method: 'GET',
+ 					credentials: 'include',
+ 					redirect: 'manual',
++					...(signal ? { signal } : {}),
+ 					headers: { 'Content-Type': 'application/json' }
+ 				});
+ 				if (
+--- a/src/lib/apis/users/index.ts
++++ b/src/lib/apis/users/index.ts
+@@ -274,20 +274,23 @@
+ 	return res;
+ };
+ 
+-export const getUserSettings = async (token: string, raw = false) => {
++// signal 仅供启动页取消读请求；未传时保持既有调用方的参数与错误合同。
++export const getUserSettings = async (token: string, raw = false, signal?: AbortSignal) => {
+ 	let error = null;
+ 	const res = await fetch(`${WEBUI_API_BASE_URL}/users/user/settings${raw ? '?raw=true' : ''}`, {
+ 		method: 'GET',
+-		headers: {
+-			'Content-Type': 'application/json',
+-			Authorization: `Bearer ${token}`
+-		}
+-	})
+-		.then(async (res) => {
+-			if (!res.ok) throw await res.json();
+-			return res.json();
+-		})
+-		.catch((err) => {
++		...(signal ? { signal } : {}),
++		headers: {
++			'Content-Type': 'application/json',
++			Authorization: `Bearer ${token}`
++		}
++	})
++		.then(async (res) => {
++			if (!res.ok) throw await res.json();
++			return res.json();
++		})
++		.catch((err) => {
++			if (signal?.aborted) throw signal.reason;
+ 			console.error(err);
+ 			error = err?.detail ?? err;
+ 			return null;
+--- a/src/lib/apis/configs/index.ts
++++ b/src/lib/apis/configs/index.ts
+@@ -794,11 +794,13 @@
+ 	return res;
+ };
+ 
+-export const getBanners = async (token: string): Promise<Banner[]> => {
++// signal 仅供启动页取消读请求；未传时保持既有调用方的参数与错误合同。
++export const getBanners = async (token: string, signal?: AbortSignal): Promise<Banner[]> => {
+ 	let error = null;
+ 
+ 	const res = await fetch(`${WEBUI_API_BASE_URL}/configs/banners`, {
+ 		method: 'GET',
++		...(signal ? { signal } : {}),
+ 		headers: {
+ 			'Content-Type': 'application/json',
+ 			Authorization: `Bearer ${token}`
+@@ -809,6 +811,7 @@
+ 			return res.json();
+ 		})
+ 		.catch((err) => {
++			if (signal?.aborted) throw signal.reason;
+ 			console.error(err);
+ 			error = err.detail;
+ 			return null;
+--- a/src/lib/apis/tools/index.ts
++++ b/src/lib/apis/tools/index.ts
+@@ -65,7 +65,8 @@
+ 	return res;
+ };
+ 
+-export const getTools = async (token: string = '', query: string | null = null) => {
++// signal 仅供启动页取消读请求；未传时保持既有调用方的参数与错误合同。
++export const getTools = async (token: string = '', query: string | null = null, signal?: AbortSignal) => {
+ 	let error = null;
+ 
+ 	const searchParams = new URLSearchParams();
+@@ -73,20 +74,22 @@
+ 
+ 	const res = await fetch(`${WEBUI_API_BASE_URL}/tools/?${searchParams.toString()}`, {
+ 		method: 'GET',
+-		headers: {
+-			Accept: 'application/json',
+-			'Content-Type': 'application/json',
+-			authorization: `Bearer ${token}`
+-		}
+-	})
+-		.then(async (res) => {
+-			if (!res.ok) throw await res.json();
+-			return res.json();
+-		})
+-		.then((json) => {
+-			return json;
+-		})
+-		.catch((err) => {
++		...(signal ? { signal } : {}),
++		headers: {
++			Accept: 'application/json',
++			'Content-Type': 'application/json',
++			authorization: `Bearer ${token}`
++		}
++	})
++		.then(async (res) => {
++			if (!res.ok) throw await res.json();
++			return res.json();
++		})
++		.then((json) => {
++			return json;
++		})
++		.catch((err) => {
++			if (signal?.aborted) throw signal.reason;
+ 			error = err.detail;
+ 			console.error(err);
+ 			return null;
+--- a/src/lib/apis/openai/index.ts
++++ b/src/lib/apis/openai/index.ts
+@@ -85,11 +85,13 @@
+ 	return res;
+ };
+ 
+-export const getOpenAIModelsDirect = async (url: string, key: string) => {
++// signal 仅供启动页取消读请求；未传时保持既有调用方的参数与错误合同。
++export const getOpenAIModelsDirect = async (url: string, key: string, signal?: AbortSignal) => {
+ 	let error = null;
+ 
+ 	const res = await fetch(`${url}/models`, {
+ 		method: 'GET',
++		...(signal ? { signal } : {}),
+ 		headers: {
+ 			Accept: 'application/json',
+ 			'Content-Type': 'application/json',
+@@ -101,6 +103,7 @@
+ 			return res.json();
+ 		})
+ 		.catch((err) => {
++			if (signal?.aborted) throw signal.reason;
+ 			error = `OpenAI: ${err?.error?.message ?? 'Network Problem'}`;
+ 			return [];
+ 		});
+--- a/src/lib/apis/auths/index.ts
++++ b/src/lib/apis/auths/index.ts
+@@ -112,8 +112,12 @@
+ };
+ 
+ /** 首页恢复登录状态专用；12 秒总时限，失败抛出含 HTTP 状态的错误，绝不清除令牌。 */
+-export const getSessionUserForBootstrap = async (token: string) => {
++export const getSessionUserForBootstrap = async (token: string, signal?: AbortSignal) => {
+ 	const controller = new AbortController();
++	// 复用原 12 秒时限，同时允许启动页销毁时取消，不影响其他会话读取入口。
++	const cancel = () => controller.abort(signal?.reason);
++	if (signal?.aborted) cancel();
++	else signal?.addEventListener('abort', cancel, { once: true });
+ 	const timer = setTimeout(() => controller.abort(), 12000);
+ 	try {
+ 		const sessionUser = await requestSessionUser(token, controller.signal);
+@@ -121,6 +125,7 @@
+ 		return sessionUser;
+ 	} finally {
+ 		clearTimeout(timer);
++		signal?.removeEventListener('abort', cancel);
+ 	}
+ };
+ 
+--- a/src/routes/+layout.svelte
++++ b/src/routes/+layout.svelte
+@@ -79,6 +79,8 @@
+ 	import AppSidebar from '$lib/components/app/AppSidebar.svelte';
+ 	import SyncStatsModal from '$lib/components/chat/Settings/SyncStatsModal.svelte';
+ 	import Spinner from '$lib/components/common/Spinner.svelte';
++	import BootstrapError from '$lib/components/common/BootstrapError.svelte';
++	import { createBootstrapRequests } from '$lib/utils/bootstrap';
+ 	import MfaManagement from '$lib/components/auth/MfaManagement.svelte';
+ 	import { getOutputText } from '$lib/components/chat/Messages/structuredOutput';
+ 	import { getUserSettings } from '$lib/apis/users';
+@@ -123,6 +125,8 @@
+ 
+ 	let loaded = false;
+ 	let sessionRestoreError = false;
++	let bootstrapError = false;
++	const bootstrapRequests = createBootstrapRequests();
+ 	let tokenTimer = null;
+ 	let isAuthRedirectInProgress = false;
+ 
+@@ -1325,9 +1329,11 @@
+ 
+ 		let backendConfig = null;
+ 		try {
+-			backendConfig = await getBackendConfig();
++			backendConfig = await bootstrapRequests.run((signal) => getBackendConfig(signal));
+ 			console.log('Backend config:', backendConfig);
+ 		} catch (error) {
++			if (bootstrapRequests.signal.aborted) return;
++			bootstrapError = true;
+ 			if (error?.authRedirect) {
+ 				// Forward-auth proxy is redirecting to an external login page.
+ 				// Full-page navigation lets the browser follow the redirect natively.
+@@ -1351,6 +1357,7 @@
+ 			await changeLanguage(lang);
+ 		}
+ 
++		if (bootstrapRequests.signal.aborted) return;
+ 		if (backendConfig) {
+ 			// Save Backend Status to Store
+ 			await config.set(backendConfig);
+@@ -1365,7 +1372,8 @@
+ 
+ 				if (localStorage.token) {
+ 					// Get Session User Info
+-					const sessionUser = await getSessionUserForBootstrap(localStorage.token).catch((error) => {
++					const sessionUser = await getSessionUserForBootstrap(localStorage.token, bootstrapRequests.signal).catch((error) => {
++						if (bootstrapRequests.signal.aborted) return null;
+ 						if (error?.status === 401) {
+ 							toast.error(error.message);
+ 						} else {
+@@ -1376,11 +1384,15 @@
+ 						return null;
+ 					});
+ 
++					if (bootstrapRequests.signal.aborted) return;
+ 					if (sessionUser) {
+ 						await user.set(sessionUser);
+ 						try {
+-							await config.set(await getBackendConfig());
++							// 登录后的配置可能包含权限差异，仍须重新读取；失败不能展示旧配置下的账号页面。
++							await config.set(await bootstrapRequests.run((signal) => getBackendConfig(signal)));
+ 						} catch (error) {
++							if (bootstrapRequests.signal.aborted) return;
++							bootstrapError = true;
+ 							console.error('Error refreshing backend config:', error);
+ 						}
+ 
+@@ -1405,7 +1417,7 @@
+ 					}
+ 				}
+ 			}
+-		} else {
++		} else if (!bootstrapError) {
+ 			// Redirect to /error when Backend Not Detected
+ 			await goto(`/error`);
+ 		}
+@@ -1481,6 +1493,7 @@
+ 	}
+ 
+ 	onDestroy(() => {
++		bootstrapRequests.cancel();
+ 		bc.close();
+ 	});
+ </script>
+@@ -1518,19 +1531,9 @@
+ {/if}
+ 
+ {#if loaded}
+-	{#if sessionRestoreError}
+-		<main id="main-content" class="flex min-h-screen items-center justify-center px-5 py-10">
+-			<div class="w-full max-w-sm text-center">
+-				<p role="alert" class="text-sm text-gray-600 dark:text-gray-300">
+-					{$i18n.t('Session verification is temporarily unavailable.')}
+-				</p>
+-				<p class="mt-2 text-xs text-gray-500">
+-					{$i18n.t('Check your connection and retry without signing out.')}
+-				</p>
+-				<button type="button" class="mt-4 rounded-full bg-gray-100 px-5 py-2 text-sm text-black hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-100" on:click={() => location.reload()}>
+-					{$i18n.t('Retry')}
+-				</button>
+-			</div>
++	{#if sessionRestoreError || bootstrapError}
++		<main id="main-content" class="flex min-h-screen items-center justify-center">
++			<BootstrapError message={sessionRestoreError ? 'Session verification is temporarily unavailable.' : 'Initialization is temporarily unavailable.'} />
+ 		</main>
+ 	{:else if mfaManagement}
+ 		<MfaManagement flow={mfaManagement} onClose={() => (mfaManagement = null)} />
+@@ -1547,7 +1550,7 @@
+ 	{/if}
+ {/if}
+ 
+-{#if $config?.features.enable_community_sharing && !sessionRestoreError}
++{#if $config?.features.enable_community_sharing && !sessionRestoreError && !bootstrapError}
+ 	<SyncStatsModal bind:show={showSyncStatsModal} eventData={syncStatsEventData} />
+ {/if}
+ 
+--- a/src/routes/(app)/+layout.svelte
++++ b/src/routes/(app)/+layout.svelte
+@@ -1,6 +1,6 @@
+ <script lang="ts">
+ 	import { toast } from 'svelte-sonner';
+-	import { onMount, tick, getContext } from 'svelte';
++	import { onMount, onDestroy, tick, getContext } from 'svelte';
+ 
+ 	import { goto } from '$app/navigation';
+ 	import { page } from '$app/stores';
+@@ -45,7 +45,9 @@
+ 	} from '$lib/stores';
+ 
+ 	import Sidebar from '$lib/components/layout/Sidebar.svelte';
+-	import SettingsModal from '$lib/components/chat/SettingsModal.svelte';
++	import SettingsModal from '$lib/components/chat/LazySettingsModal.svelte';
++	import BootstrapError from '$lib/components/common/BootstrapError.svelte';
++	import { createBootstrapRequests } from '$lib/utils/bootstrap';
+ 	import ChangelogModal from '$lib/components/ChangelogModal.svelte';
+ 	import AccountPending from '$lib/components/layout/Overlay/AccountPending.svelte';
+ 	import UpdateInfoToast from '$lib/components/layout/UpdateInfoToast.svelte';
+@@ -56,6 +58,10 @@
+ 	const i18n = getContext('i18n');
+ 
+ 	let loaded = false;
++	let startupError = false;
++	let destroyed = false;
++	const startupRequests = createBootstrapRequests();
++	onDestroy(() => { destroyed = true; startupRequests.cancel(); });
+ 
+ 	let version;
+ 	let handledSettingsUrl = '';
+@@ -69,8 +75,9 @@
+ 		}
+ 	};
+ 
+-	const setUserSettings = async (cb?: () => Promise<void>) => {
+-		const userSettings = await getUserSettings(localStorage.token);
++	const setUserSettings = async (cb?: () => Promise<void>, signal?: AbortSignal) => {
++		const userSettings = await getUserSettings(localStorage.token, false, signal);
++		signal?.throwIfAborted();
+ 
+ 		if (userSettings?.ui) {
+ 			settings.set(userSettings.ui);
+@@ -85,13 +92,14 @@
+ 		}
+ 	};
+ 
+-	const setModels = async () => {
+-		models.set(
+-			await getModels(
+-				localStorage.token,
+-				$config?.features?.enable_direct_connections ? ($settings?.directConnections ?? null) : null
+-			)
++	const setModels = async (signal?: AbortSignal) => {
++		const result = await getModels(
++			localStorage.token,
++			$config?.features?.enable_direct_connections ? ($settings?.directConnections ?? null) : null,
++			false, false, signal
+ 		);
++		signal?.throwIfAborted();
++		models.set(result);
+ 	};
+ 
+ 	const setToolServers = async () => {
+@@ -167,13 +175,15 @@
+ 		]);
+ 	};
+ 
+-	const setBanners = async () => {
+-		const bannersData = await getBanners(localStorage.token);
++	const setBanners = async (signal?: AbortSignal) => {
++		const bannersData = await getBanners(localStorage.token, signal);
++		signal?.throwIfAborted();
+ 		banners.set(bannersData);
+ 	};
+ 
+-	const setTools = async () => {
+-		const toolsData = await getTools(localStorage.token);
++	const setTools = async (signal?: AbortSignal) => {
++		const toolsData = await getTools(localStorage.token, null, signal);
++		signal?.throwIfAborted();
+ 		tools.set(toolsData);
+ 	};
+ 
+@@ -267,16 +277,21 @@
+ 
+ 		clearChatInputStorage();
+ 		try {
+-			await Promise.all([
+-				setBanners().catch((e) => console.error('Failed to load banners:', e)),
+-				setTools().catch((e) => console.error('Failed to load tools:', e)),
++			// 启动整组读取共用截止和取消；设置仍先于模型，原非超时权限错误处理保持不变。
++			await startupRequests.run((signal) => Promise.all([
++				// 组取消/超时由外层统一记录，保留原有非取消错误日志。
++				setBanners(signal).catch((e) => { if (!signal.aborted) console.error('Failed to load banners:', e); }),
++				setTools(signal).catch((e) => { if (!signal.aborted) console.error('Failed to load tools:', e); }),
+ 				setUserSettings(async () => {
+-					await setModels().catch((e) => console.error('Failed to load models:', e));
+-				})
+-			]);
++					await setModels(signal).catch((e) => { if (!signal.aborted) console.error('Failed to load models:', e); });
++				}, signal)
++			]));
+ 		} catch (e) {
+-			console.error('Failed to load user settings:', e);
+-			toast.error($i18n.t('Failed to load Interface settings'));
++			if (destroyed) return;
++			startupRequests.cancel();
++			startupError = true;
++			console.error('Chat initialization failed:', e);
++			// 页面内显示统一重试状态，不把模型/工具超时误报成界面设置错误。
+ 			return;
+ 		}
+ 
+@@ -502,6 +517,8 @@
+ 						<div id="main-content" tabindex="-1" class="sr-only left-0 top-0"></div>
+ 						<slot />
+ 					</main>
++				{:else if startupError}
++					<div class="w-full flex-1 h-full flex items-center justify-center"><BootstrapError /></div>
+ 				{:else}
+ 					<div
+ 						class="w-full flex-1 h-full flex items-center justify-center {$showSidebar
+--- a/src/lib/i18n/locales/en-US/translation.json
++++ b/src/lib/i18n/locales/en-US/translation.json
+@@ -1,4 +1,8 @@
+ {
++	"Initialization is temporarily unavailable.": "Initialization is temporarily unavailable.",
++	"Loading settings...": "Loading settings...",
++	"Unable to load settings.": "Unable to load settings.",
++	"Unable to restore settings. Reload the page and open settings again.": "Unable to restore settings. Reload the page and open settings again.",
+ 	"Session verification is temporarily unavailable.": "Session verification is temporarily unavailable.",
+ 	"Check your connection and retry without signing out.": "Check your connection and retry without signing out.",
+ 	"- usage not recorded": "- usage not recorded",
+--- a/src/lib/i18n/locales/zh-CN/translation.json
++++ b/src/lib/i18n/locales/zh-CN/translation.json
+@@ -1,4 +1,8 @@
+ {
++	"Initialization is temporarily unavailable.": "暂时无法完成初始化。",
++	"Loading settings...": "正在加载设置…",
++	"Unable to load settings.": "暂时无法加载设置。",
++	"Unable to restore settings. Reload the page and open settings again.": "无法保留设置定位，请刷新页面后重新打开设置。",
+ 	"Session verification is temporarily unavailable.": "暂时无法验证登录状态。",
+ 	"Check your connection and retry without signing out.": "请检查网络后重试，无需先退出账号。",
+ 	"- usage not recorded": "",

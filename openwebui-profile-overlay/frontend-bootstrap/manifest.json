@@ -1,0 +1,62 @@
+{
+  "upstream_commit": "f7ac7ee10962ddec0017f5c29b6740d9b9c5faca",
+  "requires_performance_patch_sha256": "33cd59adef5937d3c339781795466a9976a0cd68c0aca47fa4d24e661c9d2090",
+  "files": {
+    "src/lib/apis/index.ts": {
+      "before_sha256": "5a4962e03abfaa25e169c065ea6fffc51ea6cc1cb7e70056be032ff7c9f2e6bf",
+      "after_sha256": "bf6bf8075d863e80ab21bed8629ffe2943940ac04d8bb95343046938056e1b9f"
+    },
+    "src/lib/apis/users/index.ts": {
+      "before_sha256": "dd89647a957ea98e8d9e5ae2dac2ca83d1bf4833425b118aae188c2013afa4ee",
+      "after_sha256": "5e7b427fc0feb94abb77b9da930192d1a733365950081bd53c644f4342e96706"
+    },
+    "src/lib/apis/configs/index.ts": {
+      "before_sha256": "462dd9405c0609cafc4ff16162232acbff4f5155e8c9208cb21d525639a8ece6",
+      "after_sha256": "3f5c437fdaf0e27e33f744e41736c7d7113e7023118053ea5702a1317f0061df"
+    },
+    "src/lib/apis/tools/index.ts": {
+      "before_sha256": "4d424005098662d26f94eefe62888beaa7affd273023f322bf0854fef653c33b",
+      "after_sha256": "5adf6c4dfdb18dfd021d8f0cd2f7afa55279c82c18ccbb152b9d70523b618ca9"
+    },
+    "src/lib/apis/openai/index.ts": {
+      "before_sha256": "d6470ed516c7dcdff34dc2f253cb25d41e07fa62ce94a7d1000764af56a48721",
+      "after_sha256": "bc0f7cd4214eb9e65e006c52b98e92f9ae6b052396b0b447936eba74ee3e0c62"
+    },
+    "src/lib/apis/auths/index.ts": {
+      "before_sha256": "0dad97471cba5fc0bbffd9ed1d5f2bdf5c38fe9bf3668f1cf2cd41510a9b1807",
+      "after_sha256": "a27b6132f348fea7ee49563fa40c015ea2e6aa74a2781ac34d9563db8c703f0d"
+    },
+    "src/routes/+layout.svelte": {
+      "before_sha256": "99f1c5c9f951cafd0a88618a3eeb4b613b43280d83e5f352e8b370a7b46fee0d",
+      "after_sha256": "cd763821f9581bcd6ac5bd8949432cc7c87457738eabf79813880bf4dbaeefaa"
+    },
+    "src/routes/(app)/+layout.svelte": {
+      "before_sha256": "4d1439b4d023ed53e28e84ad83647c249aa6ba5b5ebc5dced0664bc33e055ff9",
+      "after_sha256": "31e1df8754c0f01c8cd99e51a545f88d612843547926b89be2c8da988b19f987"
+    },
+    "src/lib/i18n/locales/en-US/translation.json": {
+      "before_sha256": "1db54dd15f1a60723dd1cefdf212fdf67ed930f2ae47d477fbf94627f1bd0ece",
+      "after_sha256": "48c11d69dab79878e8c0a8abe212f99e8c70f1ca974ba8a1f1830b90f92010d0"
+    },
+    "src/lib/i18n/locales/zh-CN/translation.json": {
+      "before_sha256": "11d16c88782f8296a2595ea9511486423cfa90183c789db7470dc436b6b57dc6",
+      "after_sha256": "1886b66ba07a1a7c425d0a6aa344d21a13dec5319adbfa3dfbb1370a2bc23a1f"
+    },
+    "src/lib/utils/bootstrap.ts": {
+      "before_sha256": null,
+      "after_sha256": "f7afef8e9d8b5ee13b85dc2dac03b805bc478003ecf0571b73616861fc4b88ad"
+    },
+    "src/lib/utils/settingsRetry.ts": {
+      "before_sha256": null,
+      "after_sha256": "4296b31dbb04f1338ad3cec7bc23095627a926162c3de3d4f0037abb8c5639df"
+    },
+    "src/lib/components/common/BootstrapError.svelte": {
+      "before_sha256": null,
+      "after_sha256": "143a05dcd58b52442a8588a55791dab8dc263a0a00a18dbb41e0abf3515d7773"
+    },
+    "src/lib/components/chat/LazySettingsModal.svelte": {
+      "before_sha256": null,
+      "after_sha256": "2a7050612a04029027e19b38cc927d059cb7b5efc52f90105b5bd349adb8cd76"
+    }
+  }
+}

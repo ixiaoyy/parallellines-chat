@@ -24,17 +24,24 @@ and account identity rules retain the upstream behavior.
    directory. Preserve its lockfile and licenses.
 2. Apply `openwebui-profile-overlay/frontend-auth-recovery/apply.py` to that source.
    It checks the source SHA and refuses drift or duplicate application.
-3. Install the locked frontend dependencies (`npm ci --force --ignore-scripts`)
+3. Install the locked frontend dependencies using the persistent download cache
+   (`npm ci --force --ignore-scripts --prefer-offline --cache "$HOME/.cache/parallellines-chat/npm" --no-audit --no-fund`)
    and run `node deploy/build-recovery-frontend.mjs /path/to/prepared/source`
    from this repository. It checks the lock and patched API hashes, runs the
    upstream crypto check, and compiles with Vite using the original version.
    This incremental image retains the official image's
    unchanged Pyodide assets; it does not re-download Python packages or replace
    those runtime assets. Record the exact build commands and archive hashes.
-4. The builder copies the generated `build/` except its `pyodide/` subtree to ignored
-   `openwebui-profile-overlay/frontend-build/`. Generate
-   `frontend-build-manifest.json` with the fixed upstream commit and a `files`
-   mapping of every included relative path to its SHA256. The upstream source's
+4. The builder uses hidden source maps and splits the generated `build/`, except
+   its unchanged `pyodide/` subtree, into ignored public `frontend-build/` and
+   private `frontend-debug/` under `openwebui-profile-overlay/`.
+   It generates `frontend-build-manifest.json` with the fixed upstream commit and a
+   `files` mapping of every public relative path to its SHA256. The private
+   `source-map-manifest.json` binds the map hashes to that public manifest's digest.
+   Keep private maps for debugging; do not upload them or expose them as static files.
+   The overlay's `.dockerignore` excludes them from the build context, and the
+   image removes inherited compiled maps without removing old hashed assets or Pyodide.
+   Both output types refuse to overwrite existing artifacts. The upstream source's
    baseline Pyodide lock must not overwrite the official image's complete runtime
    lock. Build products are release
    artifacts, not handwritten application source.

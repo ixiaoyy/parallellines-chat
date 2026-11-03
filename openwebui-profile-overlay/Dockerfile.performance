@@ -2,4 +2,6 @@ ARG CHAT_BASE_IMAGE
 FROM ${CHAT_BASE_IMAGE}
 # 增量镜像保留当前全部后端补丁、密钥配置和原版 Pyodide 文件。
 COPY frontend-build/ /app/build/
+# 旧增量基线可能带公开映射；只清理编译映射，保留旧哈希资源与完整 Pyodide。
+RUN find /app/build/_app -type f -name '*.map' -delete
 COPY frontend-build-manifest.json /app/frontend-performance-manifest.json

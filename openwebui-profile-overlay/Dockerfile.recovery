@@ -8,3 +8,5 @@ RUN python /tmp/pl-profile-apply.py /app/backend/open_webui \
 # Generated from the same fixed upstream source plus frontend-auth-recovery.
 # COPY preserves the official image's unchanged Pyodide runtime assets.
 COPY frontend-build/ /app/build/
+# 清除基线中已有的编译映射；不删除旧 JS/CSS 或原版 Pyodide 资源。
+RUN find /app/build/_app -type f -name '*.map' -delete
