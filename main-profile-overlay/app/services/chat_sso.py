@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.chat_sso import (
     CLIENT_ID,
+    MAIN_ROLES,
     ChatSsoCore,
     SecurityRecord,
     SessionState,
@@ -45,6 +46,9 @@ class SqlChatSsoRepository:
         user = await self.session.get(User, user_id, populate_existing=True)
         if user is None:
             return None
+        # 从数据库读取当前权限；异常角色不得降级成普通用户或推断成管理员。
+        if not isinstance(user.role, str) or user.role not in MAIN_ROLES:
+            raise SsoDenied("invalid_main_role")
         email = (user.email or "").lower()
         verified = False
         if email:
@@ -78,6 +82,7 @@ class SqlChatSsoRepository:
             username=user.username,
             email=email if verified else None,
             email_verified=verified,
+            role=user.role,
         )
 
     async def get_session(self, session_id: str) -> SessionState | None:

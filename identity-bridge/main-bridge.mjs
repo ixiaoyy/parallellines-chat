@@ -15,12 +15,17 @@ export function validateIdentity(value, { bindingId, subject, requireName = fals
       (requireName && (typeof value.name !== 'string' || value.name.length > 256))) {
     throw new MainAuthorityError('main_binding_inactive');
   }
+  // 兼容旧主站不含角色的响应；字段一旦存在，必须通过主站角色白名单。
+  if (Object.hasOwn(value, 'role') && !['user', 'moderator', 'admin'].includes(value.role)) {
+    throw new MainAuthorityError('main_role_invalid');
+  }
   return {
     sub: value.sub, binding_id: value.binding_id, auth_expires_at: value.auth_expires_at,
     ...(typeof value.name === 'string' ? { name: value.name } : {}),
     ...(typeof value.username === 'string' ? { username: value.username } : {}),
     email_verified: value.email_verified === true,
     ...(value.email_verified === true && typeof value.email === 'string' ? { email: value.email } : {}),
+    ...(Object.hasOwn(value, 'role') ? { role: value.role } : {}),
   };
 }
 

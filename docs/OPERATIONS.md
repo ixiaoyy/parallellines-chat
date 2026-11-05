@@ -17,9 +17,10 @@ state, subject, or client binding checks to work around a failed login. The API
 client needs the opt-in PKCE patch from ParallelLines-Api. This is OAuth/UserInfo
 for New API; it does not claim New API validates ID-token nonces.
 
-Chat requests `openid profile offline_access` and native
-`OAUTH_AUTHORIZE_PARAMS={"prompt":"consent"}`. Both are required for a Chat refresh
-token. The retired LibreChat RP is not registered; the New API login client cannot
+Chat requests `openid profile email offline_access` and native
+`OAUTH_AUTHORIZE_PARAMS={"prompt":"consent"}`. Offline scope and consent are
+required for a Chat refresh token; email is required for the reviewed account
+synchronization. The retired LibreChat RP is not registered; the New API login client cannot
 obtain a refresh token. Every refresh checks the Main binding again, rotates the
 token, and remains bounded by the original Main expiry. Revocation, identity
 change, expiry, or an unavailable Main authority fails closed. Users with an
@@ -33,6 +34,14 @@ take audience or identity from caller headers or query parameters. Standard ID
 token signing and audiences are unchanged. `pl_auth_exp` is integer epoch seconds;
 `pl_binding` is an opaque Main-session binding. The relay must accept only
 `aud=parallellines-openwebui`, never legacy or New API login access tokens.
+
+With profile synchronization enabled, the two registered clients can receive
+UserInfo `pl_role` under `profile`. Its exact `user`/`moderator`/`admin` value is
+read from the current Main database through the authenticated session-state
+channel. Missing role in an older Main response is omitted, never defaulted;
+invalid present values fail closed. No ID-token role is added. Chat's own native
+role/group management stays disabled; New API account synchronization is a
+separate opt-in consumer. See [the release order](profile-sync-release.md).
 
 Preserve existing issuer signing keys, cookie keys, database, and shared service secrets.
 Give each new relying party its own secret. The example files are placeholders,
@@ -71,15 +80,20 @@ cookie forwarding. Keep `ENABLE_BASE_MODELS_CACHE=false`. The standard
 it natively; cookie-less tasks use that user's session lookup. Do not configure a
 shared fallback key. If there is no valid OAuth token, the adapter must reject
 the request. A local recovery-admin login alone supplies no Main OAuth token.
-New API may require one main-account login to create the verified subject mapping
-before that user can use the relay.
+The legacy New API relay requires an existing verified subject mapping. Its
+reviewed account-sync release, enabled separately with
+`MAIN_OAUTH_ACCOUNT_SYNC_ENABLED=true`, creates the first account/binding from
+current trusted Chat UserInfo, so a user need not visit the API site. Deploy Main
+role output, bridge UserInfo and Chat's email scope before enabling that flag.
+Old Chat sessions lacking the new scopes must reauthorize via the main-account
+button in Chat; changing environment values alone cannot add scopes to tokens.
 
 Model listing and text/image-content chat, responses, and title tasks must use
 the same connection and user identity. Do not put title/background models on a
 second shared-key connection. Image content in chat is distinct from image
 generation endpoints; enable only protocols the adapter implements and verifies.
 Keep the default role `user`, role/group mapping disabled, and the existing
-recovery administrator. This change does not promote accounts or link by email.
+recovery administrator. Chat itself does not promote accounts or link by email.
 
 Pinned upstream behavior was checked in Open WebUI v0.12.5:
 [native authorization and refresh](https://github.com/open-webui/open-webui/blob/v0.12.5/backend/open_webui/utils/oauth.py),

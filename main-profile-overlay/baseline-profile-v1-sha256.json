@@ -1,0 +1,7 @@
+{
+  "core/chat_sso.py": "f3a903f111cfd7611c9bb616f5356d92c36fff5f01100b0aa1fe084bdca7c98a",
+  "services/chat_sso.py": "67fbb88de702d1d85b53350c9b701f09b816f099bf630cfd9f60be10bd753cf1",
+  "schemas/chat_sso.py": "77683af11ee40fd0d97822b865fdf524e2d4e8dcc7c8a7ef3a967eb3e38ce869",
+  "services/auth.py": "f29b176e1c234152eec02b4d8b6787d39ed574bdae0dbab01c7f4c9aa595178a",
+  "models/user.py": "28f12234012452d38b13c05fb23facda3fe78ce0fc85438babd4ba63dfcbaff7"
+}

@@ -21,3 +21,13 @@ test('unverified or incomplete profiles fail closed; no email leaks from unverif
     if (patch.email_verified !== undefined || Object.hasOwn(patch, 'email_verified')) assert.equal(value.email, undefined);
   }
 });
+
+test('Main roles retain exact authority values; missing legacy role grants nothing', () => {
+  assert.equal(Object.hasOwn(validateIdentity(identity, { now: 1000000 }), 'role'), false);
+  for (const role of ['user', 'moderator', 'admin']) {
+    assert.equal(validateIdentity({ ...identity, role }, { now: 1000000 }).role, role);
+  }
+  for (const role of [undefined, null, '', 'root', 'ADMIN', true, 100, ['admin']]) {
+    assert.throws(() => validateIdentity({ ...identity, role }, { now: 1000000 }), /main_role_invalid/);
+  }
+});

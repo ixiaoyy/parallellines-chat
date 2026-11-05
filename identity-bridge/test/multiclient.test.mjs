@@ -104,6 +104,8 @@ test('two clients: real OIDC protocol and persisted Main binding isolation', asy
       ({ provider, handler } = createIdentityProvider({ config, store }));
     }
     restart();
+    assert.throws(() => createIdentityProvider({ config: { ...config,
+      clients: [{ ...chatClient, clientId: 'untrusted-client', profileSyncEnabled: true }] }, store }), /invalid_registered_clients/);
     const rps = new Map();
     for (const client of clients) {
       rps.set(client.clientId, await oidc.discovery(new URL(issuer), client.clientId,
@@ -210,6 +212,7 @@ test('two clients: real OIDC protocol and persisted Main binding isolation', asy
       assert.equal(payload.email, undefined);
       assert.equal(payload.role, undefined);
       assert.equal(payload.roles, undefined);
+      assert.equal(payload.pl_role, undefined);
       const response = await fetch(userinfoEndpoint, { headers: { Authorization: `Bearer ${tokens.access_token}` }, redirect: 'error' });
       assert.equal(response.status, 200);
       const user = await response.json();
@@ -219,6 +222,7 @@ test('two clients: real OIDC protocol and persisted Main binding isolation', asy
       assert.equal(user.aud, flow.client.clientId);
       assert.equal(user.pl_auth_exp, flow.identity.auth_expires_at);
       assert.equal(user.role, undefined);
+      assert.equal(user.pl_role, undefined);
       return payload;
     }
     function assertAuthorizationRejected(flow) {
@@ -459,6 +463,7 @@ test('two clients: real OIDC protocol and persisted Main binding isolation', asy
           assert.equal(value.email, 'current@example.invalid');
           assert.equal(value.email_verified, true);
           assert.equal(value.role, undefined);
+          assert.equal(value.pl_role, undefined, 'Old Main responses do not invent a role');
           states.set(approval.identity.binding_id, { ...approval.identity, email_verified: false });
           const rejected = await fetch(userinfoEndpoint, { headers: { Authorization: `Bearer ${tokens.access_token}` } });
           assert.equal(rejected.status, 401);
@@ -468,6 +473,68 @@ test('two clients: real OIDC protocol and persisted Main binding isolation', asy
         chatClient.profileSyncEnabled = false;
         apiClient.profileSyncEnabled = false;
       }
+    });
+
+    await t.test('current Main role is UserInfo-only, profile-scoped and requires profile opt-in', async () => {
+      try {
+        for (const client of clients) {
+          for (const role of ['user', 'moderator', 'admin']) {
+            client.profileSyncEnabled = true;
+            const flow = await begin(client, { scope: 'openid profile email' });
+            const approval = approve(flow, `role-${client.clientId}-${role}`);
+            Object.assign(approval.identity, { username: 'role-user', name: 'Role user',
+              email: 'role@example.invalid', email_verified: true, role });
+            const callback = await callbackAfterFinish(flow, await finish(flow, approval.code));
+            const tokens = await exchange({ ...flow, callback });
+            assert.equal(tokens.claims().pl_role, undefined, 'No role is added to ID tokens');
+            const read = async () => {
+              const response = await fetch(userinfoEndpoint, { headers: { Authorization: `Bearer ${tokens.access_token}` } });
+              assert.equal(response.status, 200);
+              return response.json();
+            };
+            assert.equal((await read()).pl_role, role);
+            states.set(approval.identity.binding_id, { ...approval.identity, role: 'user' });
+            assert.equal((await read()).pl_role, 'user', 'Current session-state overrides the original role');
+            client.profileSyncEnabled = false;
+            assert.equal((await read()).pl_role, undefined, 'Disabled profile sync exposes no role');
+          }
+          client.profileSyncEnabled = true;
+          const flow = await begin(client, { scope: 'openid email' });
+          const approval = approve(flow, 'no-profile-scope');
+          Object.assign(approval.identity, { username: 'role-user', name: 'Role user',
+            email: 'role@example.invalid', email_verified: true, role: 'admin' });
+          const callback = await callbackAfterFinish(flow, await finish(flow, approval.code));
+          const tokens = await exchange({ ...flow, callback });
+          const response = await fetch(userinfoEndpoint, { headers: { Authorization: `Bearer ${tokens.access_token}` } });
+          assert.equal(response.status, 200);
+          assert.equal((await response.json()).pl_role, undefined, 'OpenID/email scopes do not grant profile role');
+          client.profileSyncEnabled = false;
+        }
+      } finally {
+        chatClient.profileSyncEnabled = false;
+        apiClient.profileSyncEnabled = false;
+      }
+    });
+
+    await t.test('invalid Main role fails authorization and current UserInfo closed', async () => {
+      chatClient.profileSyncEnabled = true;
+      try {
+        const flow = await begin(chatClient, { scope: 'openid profile email' });
+        const approval = approve(flow, 'invalid-role');
+        Object.assign(approval.identity, { username: 'role-user', name: 'Role user',
+          email: 'role@example.invalid', email_verified: true, role: 'root' });
+        assert.equal((await finish(flow, approval.code)).status, 403);
+        const valid = await begin(chatClient, { scope: 'openid profile email' });
+        const accepted = approve(valid, 'role-revoked');
+        Object.assign(accepted.identity, { username: 'role-user', name: 'Role user',
+          email: 'role@example.invalid', email_verified: true, role: 'admin' });
+        const callback = await callbackAfterFinish(valid, await finish(valid, accepted.code));
+        const tokens = await exchange({ ...valid, callback });
+        states.set(accepted.identity.binding_id, { ...accepted.identity, role: 'root' });
+        const response = await fetch(userinfoEndpoint, { headers: { Authorization: `Bearer ${tokens.access_token}` } });
+        assert.equal(response.status, 401);
+        assert.equal((await response.json()).pl_role, undefined);
+      } finally { chatClient.profileSyncEnabled = false; }
     });
 
 

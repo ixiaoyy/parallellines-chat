@@ -31,7 +31,7 @@ KNOWN_STALE_SOURCE = {
     "identity-provider.mjs": "46b3b3b459373abe791cc6370462a3d7c51eb3d181c248f3727edc15eef9e80c",
 }
 REFRESH_ENV = {
-    "OAUTH_SCOPES": "openid profile offline_access",
+    "OAUTH_SCOPES": "openid profile email offline_access",
     "OAUTH_AUTHORIZE_PARAMS": '{"prompt":"consent"}',
     "OAUTH_REFRESH_TOKEN_INCLUDE_SCOPE": "false",
 }

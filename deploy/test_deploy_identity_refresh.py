@@ -103,6 +103,7 @@ class DeployTests(unittest.TestCase):
         config = release.yaml.safe_load(doc)
         self.assertEqual(config["services"]["openwebui"]["environment"]["DEFAULT_USER_ROLE"], "user")
         self.assertEqual(config["services"]["openwebui"]["environment"]["OAUTH_AUTHORIZE_PARAMS"], '{"prompt":"consent"}')
+        self.assertEqual(config["services"]["openwebui"]["environment"]["OAUTH_SCOPES"], 'openid profile email offline_access')
         self.assertEqual({path: path.stat().st_ino for path in self.originals}, self.inodes)
         ups = [args for args in deployer.commands if args[:2] == ["docker", "compose"] and "up" in args]
         self.assertEqual([args[-1] for args in ups], ["chat-oidc", "openwebui"])

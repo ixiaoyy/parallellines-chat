@@ -6,7 +6,7 @@
   "approved_upstream_base_url": "https://api.pingxingxian.space/oauth-relay/v1",
   "expected_upstream_model_ids": ["gpt-6-luna", "gpt-6.1-terra", "gpt-6.1-sol"],
   "startup_environment_overrides": {
-    "OAUTH_SCOPES": "openid profile offline_access",
+    "OAUTH_SCOPES": "openid profile email offline_access",
     "ENABLE_FORWARD_USER_INFO_HEADERS": "false",
     "ENABLE_BASE_MODELS_CACHE": "false",
     "ENABLE_IMAGE_GENERATION": "false",

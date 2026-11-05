@@ -113,7 +113,7 @@ export function createIdentityProvider({ config, store, fetchImpl }) {
     // Pinned oidc-provider 9.13.2 accepts only S256; every registered client requires it.
     pkce: { required: () => true },
     scopes: ['openid', 'profile', 'email', 'offline_access'],
-    claims: { openid: ['sub', 'pl_binding', 'pl_auth_exp', 'iss', 'aud'], profile: ['name', 'preferred_username'], email: ['email', 'email_verified'] },
+    claims: { openid: ['sub', 'pl_binding', 'pl_auth_exp', 'iss', 'aud'], profile: ['name', 'preferred_username', 'pl_role'], email: ['email', 'email_verified'] },
     // 保留两个现有客户端的 ID-token 资料声明形状。
     conformIdTokenClaims: false,
     // 新 Chat 仍须原生 offline-access 同意；New API 的注册不允许刷新。
@@ -155,7 +155,9 @@ export function createIdentityProvider({ config, store, fetchImpl }) {
             if (!clientsById.has(issuedClientId) || issuedClientId !== ctx.oidc.client?.clientId) {
               throw new errors.InvalidToken('Access token client mismatch');
             }
-            return { ...claims, iss: config.issuer, aud: issuedClientId };
+            // 仅向已开启资料同步的受信客户端发布当前主站角色；不改变 Chat 本身权限。
+            return { ...claims, iss: config.issuer, aud: issuedClientId,
+              ...(profileSync && state.role !== undefined ? { pl_role: state.role } : {}) };
           },
         };
       } catch (error) {

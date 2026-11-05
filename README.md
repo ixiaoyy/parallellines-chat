@@ -6,6 +6,8 @@ profile overlay makes existing-account name/email updates fail clearly on
 conflicts and commit together; it does not change account identity or roles.
 The authorization-recovery overlay adds a native toast with an explicit action
 when a model-list request lacks the main-site OAuth authorization.
+The trusted profile overlay also carries the Main database role to UserInfo as
+`pl_role` for opted-in clients; Chat's own role/group mapping remains disabled.
 
 The pinned application is **v0.12.5**, commit
 `f7ac7ee10962ddec0017f5c29b6740d9b9c5faca`; the exact official Linux amd64 image is
@@ -26,7 +28,7 @@ recorded in `upstream.lock.json`. Read [NOTICE.md](NOTICE.md) for component term
 Main-site credentials are entered only at the main site. Users select the
 **平行线账号** login button in Chat. Ordinary users default to `user`; administrator
 binding requires verification of the stable main-site subject and existing role.
-Email matching and automatic admin-role claims are disabled.
+Email matching and Chat's automatic role elevation remain disabled.
 
 **The deployment template defaults to model access disabled until the separate
 New API OAuth relay and per-user bindings are ready.** The live installation uses

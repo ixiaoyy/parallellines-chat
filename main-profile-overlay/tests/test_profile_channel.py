@@ -36,6 +36,7 @@ class User(Base):
     username = Column(String)
     display_name = Column(String)
     email = Column(String)
+    role = Column(String, default="user")
 
 
 class EmailVerificationCode(Base):
@@ -177,6 +178,17 @@ class ProofTests(unittest.IsolatedAsyncioTestCase):
     async def test_missing_user(self):
         self.assertIsNone(await self.repo.get_user("missing"))
 
+    async def test_database_role_is_current_and_strict(self):
+        for role in ("user", "moderator", "admin"):
+            self.user.role = role
+            self.session.commit()
+            self.assertEqual((await self.repo.get_user(self.user.id)).role, role)
+        for role in (None, "root", "ADMIN", ""):
+            self.user.role = role
+            self.session.commit()
+            with self.assertRaisesRegex(core.SsoDenied, "invalid_main_role"):
+                await self.repo.get_user(self.user.id)
+
 
 class MarkerTests(unittest.TestCase):
     def test_strict_marker_and_email(self):
@@ -194,7 +206,7 @@ class MarkerTests(unittest.TestCase):
 class MemoryRepository:
     def __init__(self):
         self.user = core.UserState("subject-1", "active", "Display", "primary",
-                                   "current@example.invalid", True)
+                                   "current@example.invalid", True, "user")
         self.session = core.SessionState("session-1", "subject-1", False)
         self.tokens = {}
 
@@ -237,13 +249,15 @@ class CoreTests(unittest.IsolatedAsyncioTestCase):
         parsed = schema.ChatSsoExchangeResponse(**exchanged)
         self.assertEqual(parsed.username, "primary")
         self.assertTrue(parsed.email_verified)
+        self.assertEqual(parsed.role, "user")
         self.repo.user = replace(self.repo.user, username="changed", name="Changed",
-                                 email="changed@example.invalid")
+                                 email="changed@example.invalid", role="admin")
         current = await self.core.session_state(client_id=core.CLIENT_ID, binding_id="b" * 32)
         self.assertEqual((current["sub"], current["binding_id"], current["auth_expires_at"]),
                          (exchanged["sub"], exchanged["binding_id"], exchanged["auth_expires_at"]))
         self.assertEqual(current["username"], "changed")
         self.assertEqual(current["email"], "changed@example.invalid")
+        self.assertEqual(current["role"], "admin")
         with self.assertRaises(core.SsoDenied):
             await self.core.exchange(client_id=core.CLIENT_ID,
                                      interaction_id="interaction-1", approval_code="a" * 32)
@@ -262,6 +276,7 @@ class CoreTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(state.sub)
         self.assertIsNone(state.email)
         self.assertFalse(state.email_verified)
+        self.assertIsNone(state.role)
 
     async def test_wrong_client_and_cross_subject_session_remain_denied(self):
         with self.assertRaises(core.SsoDenied):
@@ -269,6 +284,17 @@ class CoreTests(unittest.IsolatedAsyncioTestCase):
         self.repo.session = replace(self.repo.session, user_id="subject-2")
         self.assertFalse((await self.core.session_state(client_id=core.CLIENT_ID,
                                                        binding_id="b" * 32))["active"])
+
+    async def test_optional_old_role_and_invalid_role(self):
+        self.repo.user = replace(self.repo.user, role=None)
+        legacy = await self.core.session_state(client_id=core.CLIENT_ID, binding_id="b" * 32)
+        self.assertNotIn("role", legacy)
+        self.assertIsNone(schema.ChatSsoStateResponse(**legacy).role)
+        self.repo.user = replace(self.repo.user, role="root")
+        rejected = await self.core.session_state(client_id=core.CLIENT_ID, binding_id="b" * 32)
+        self.assertFalse(rejected["active"])
+        with self.assertRaises(ValueError):
+            schema.ChatSsoStateResponse(**{**legacy, "role": "root"})
 
 
 class ChangeWriterTests(unittest.IsolatedAsyncioTestCase):
