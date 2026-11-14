@@ -1,0 +1,6 @@
+ARG CHAT_BASE_IMAGE
+FROM ${CHAT_BASE_IMAGE}
+# 必须基于本次核对的完整运行镜像，保留 Responses、免费模型、资料同步和性能补丁。
+COPY apply_model_auth.py /tmp/apply_model_auth.py
+COPY main_model_auth.py /app/backend/open_webui/utils/main_model_auth.py
+RUN python /tmp/apply_model_auth.py /app/backend/open_webui && rm /tmp/apply_model_auth.py

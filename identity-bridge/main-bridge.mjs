@@ -19,6 +19,9 @@ export function validateIdentity(value, { bindingId, subject, requireName = fals
   if (Object.hasOwn(value, 'role') && !['user', 'moderator', 'admin'].includes(value.role)) {
     throw new MainAuthorityError('main_role_invalid');
   }
+  if (Object.hasOwn(value, 'unified_browser') && typeof value.unified_browser !== 'boolean') {
+    throw new MainAuthorityError('main_unified_context_invalid');
+  }
   return {
     sub: value.sub, binding_id: value.binding_id, auth_expires_at: value.auth_expires_at,
     ...(typeof value.name === 'string' ? { name: value.name } : {}),
@@ -26,6 +29,7 @@ export function validateIdentity(value, { bindingId, subject, requireName = fals
     email_verified: value.email_verified === true,
     ...(value.email_verified === true && typeof value.email === 'string' ? { email: value.email } : {}),
     ...(Object.hasOwn(value, 'role') ? { role: value.role } : {}),
+    ...(Object.hasOwn(value, 'unified_browser') ? { unified_browser: value.unified_browser } : {}),
   };
 }
 
@@ -72,6 +76,25 @@ export function createMainBridge({ apiRoot, bridgeSecret, timeoutMs = 1000, fetc
       return validateIdentity(await post('session-state', { binding_id: identity.binding_id }), {
         bindingId: identity.binding_id, subject: identity.sub,
       });
+    },
+    /** 新 RP 复核只把明确 active:false 当退出；异常资料、网络和权限故障均不可用。 */
+    async bindingState(identity) {
+      const data = await post('session-state', { binding_id: identity.binding_id });
+      if (data && typeof data === 'object' && data.active === false) return { active: false };
+      try {
+        return { active: true, ...validateIdentity(data, { bindingId: identity.binding_id, subject: identity.sub }) };
+      } catch { throw new MainAuthorityError(); }
+    },
+    /** 仅为已核主站绑定申请一次短期退出票据，不将主站服务密钥交给 RP。 */
+    async logoutTicket(identity, returnUri) {
+      const data = await post('unified-logout-ticket', { binding_id: identity.binding_id, return_uri: returnUri });
+      const expected = new URL(root.origin + '/auth/unified/logout');
+      let target;
+      try { target = new URL(data?.logout_url); } catch { throw new MainAuthorityError(); }
+      if (target.origin !== expected.origin || target.pathname !== expected.pathname || target.hash ||
+          target.username || target.password || data?.expires_in !== 60 ||
+          target.searchParams.getAll('ticket').length !== 1 || [...target.searchParams.keys()].some(key => key !== 'ticket') || !opaque(target.searchParams.get('ticket'))) throw new MainAuthorityError();
+      return { logout_url: target.href, expires_in: 60 };
     },
   });
 }

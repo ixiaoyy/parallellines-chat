@@ -1,0 +1,37 @@
+{
+  "upstream_commit": "f7ac7ee10962ddec0017f5c29b6740d9b9c5faca",
+  "feature_order": [
+    "frontend-performance",
+    "frontend-bootstrap",
+    "frontend-auth-recovery",
+    "frontend-silent-recovery"
+  ],
+  "files": {
+    "src/lib/apis/index.ts": {
+      "before_sha256": "9c2ac41b0072cf866f14a131f163a897cb190928a2a85107d46e2097bc79ba97",
+      "after_sha256": "a75e88686049f7ece7c9aab2c2e506d1cc753ff18688c76e93945493b0db83d7"
+    },
+    "src/routes/(app)/+layout.svelte": {
+      "before_sha256": "31e1df8754c0f01c8cd99e51a545f88d612843547926b89be2c8da988b19f987",
+      "after_sha256": "7f0e96ae52071a51d7d148afb77bdeb28a28bd46a7ce1070547925562a619c0c"
+    },
+    "src/lib/apis/main-model-silent-recovery.mjs": {
+      "before_sha256": null,
+      "after_sha256": "834937099c88f155b425305d16580042516607c7495e5a3380bf94d0a1189896"
+    }
+  },
+  "backend": {
+    "main.py": {
+      "before_sha256": "c40fa80418d08771783c0158b65481793cc31fe8c92220027a669bdf5cf1b428",
+      "after_sha256": "21e4d707d85093ec2a03b44a1889178c882d1e43f578eb41d85521b657a587cc"
+    },
+    "utils/oauth.py": {
+      "before_sha256": "9fe24392ccc3f88741801a198e9bcbeab5f72f814978c0e0d39ec9fdac14d5df",
+      "after_sha256": "5b7cda5a35c7475cf4f03e25d5f82251b790afd295f644563ceeb3d93092a87b"
+    },
+    "utils/main_model_silent_recovery.py": {
+      "before_sha256": null,
+      "after_sha256": "73a38efc460b8e62d4c7221438d69d86998362f4c472fde095099e3efd38f8a3"
+    }
+  }
+}

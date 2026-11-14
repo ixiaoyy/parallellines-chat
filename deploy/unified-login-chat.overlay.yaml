@@ -1,0 +1,13 @@
+# 只合入现有 Chat 项目，保留原数据、凭据、连接、计费与 native 角色。
+services:
+  openwebui:
+    image: ${CHAT_UNIFIED_IMAGE:?Set the reviewed unified-login image}
+    environment:
+      MAIN_UNIFIED_LOGIN_ENABLED: ${MAIN_UNIFIED_LOGIN_ENABLED:-false}
+      MAIN_UNIFIED_RECOVERY_ENABLED: ${MAIN_UNIFIED_RECOVERY_ENABLED:-false}
+      MAIN_UNIFIED_RECOVERY_ADMIN_IDS: ${MAIN_UNIFIED_RECOVERY_ADMIN_IDS:-[]}
+      WEBUI_AUTH: "true"
+      OAUTH_AUTO_REDIRECT: "false"
+      ENABLE_OAUTH_ROLE_MANAGEMENT: "false"
+      ENABLE_OAUTH_GROUP_MANAGEMENT: "false"
+      OAUTH_MERGE_ACCOUNTS_BY_EMAIL: "false"

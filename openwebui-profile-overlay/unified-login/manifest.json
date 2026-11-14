@@ -1,0 +1,69 @@
+{
+  "upstream_version": "0.12.5",
+  "upstream_commit": "f7ac7ee10962ddec0017f5c29b6740d9b9c5faca",
+  "feature_order": [
+    "frontend-performance",
+    "frontend-bootstrap",
+    "frontend-auth-recovery",
+    "frontend-silent-recovery",
+    "unified-login"
+  ],
+  "files": {
+    "src/routes/(app)/+layout.svelte": {
+      "before_sha256": "7f0e96ae52071a51d7d148afb77bdeb28a28bd46a7ce1070547925562a619c0c",
+      "after_sha256": "5cdfefa6169b76b70525981ff5aa1ab483e97b2fad656d8627af06b6e49c3c0f"
+    },
+    "src/routes/+layout.svelte": {
+      "before_sha256": "cd763821f9581bcd6ac5bd8949432cc7c87457738eabf79813880bf4dbaeefaa",
+      "after_sha256": "f9bf89c5ca8ee36aa3713546a50c6a28ea5f87f670ddc92f8ad3766b23def970"
+    },
+    "src/routes/auth/+page.svelte": {
+      "before_sha256": "609789633f5e8a7eebd5afb28ee0ae9c7086d03bf72c9c0456b67dc49cf8eb09",
+      "after_sha256": "0de45a8cf771e4748edfe8d760e9409972cfed12ae230301e437ff3a729b6fbf"
+    },
+    "src/lib/apis/auths/index.ts": {
+      "before_sha256": "a27b6132f348fea7ee49563fa40c015ea2e6aa74a2781ac34d9563db8c703f0d",
+      "after_sha256": "8ffa7ae46b081d09900021835afaaa44b416d4fb9f7249be9bf1f79bd80243ce"
+    },
+    "src/lib/components/chat/Chat.svelte": {
+      "before_sha256": "42fa6f27ae9a4c628b32c9149c6a3c4ff57c58aaf43527de87707eada2af0dd9",
+      "after_sha256": "7cf8c56e6420921bada744fec66bd0674dc3347ae43f989e216582cf34550e78"
+    },
+    "backend/open_webui/utils/auth.py": {
+      "before_sha256": "adf37b3c5fe96436e5ab425388ed1b7981ed9e84a65e66af61fef59be95ea0d1",
+      "after_sha256": "a0c734906a5415f9ef50c035204997e9874609e961a1e2e043898533e3c1c0b5"
+    },
+    "backend/open_webui/utils/oauth.py": {
+      "before_sha256": "5b7cda5a35c7475cf4f03e25d5f82251b790afd295f644563ceeb3d93092a87b",
+      "after_sha256": "579558b1cf287da371c1c7184c092f69cea7f2ee6a0a87f6fb12d7110290ca75"
+    },
+    "backend/open_webui/models/oauth_sessions.py": {
+      "before_sha256": "9eec8e1fe35ba3915b21325c6c54d39586e2f51f8e794634b66d1894aed361b3",
+      "after_sha256": "d246355408ade92d9c0acd92c2bc75b1442551c0cf517f18c557b46981565b60"
+    },
+    "backend/open_webui/routers/mfa.py": {
+      "before_sha256": "f73636cfdaef8e211ee560d223c94eb108493b00487287f3eb6d24e3de0028e8",
+      "after_sha256": "6a28cd8c62ee2d34d62b4559fe42317c26a5e663d591b731f0225e86c6490847"
+    },
+    "backend/open_webui/routers/auths.py": {
+      "before_sha256": "0df3f77014a5a5983280b97c889e0877e6eaa6659bd489906ec6f216fcc66ded",
+      "after_sha256": "f70397dfa23d82b0413dac5e4f1f116ce8a68346d9ac7138c5790dd31d3d8240"
+    },
+    "backend/open_webui/main.py": {
+      "before_sha256": "21e4d707d85093ec2a03b44a1889178c882d1e43f578eb41d85521b657a587cc",
+      "after_sha256": "d5ae4cfd04d5898d901915423610e3864c53c3609956fb453c7294b32c69c0b6"
+    },
+    "src/lib/apis/main-unified-browser.mjs": {
+      "before_sha256": null,
+      "after_sha256": "e019ea819869f66b5fdaa3c9b9dfe2c57bff35fe81a1c05b53d4affc953921f2"
+    },
+    "src/lib/components/layout/GuestChatShell.svelte": {
+      "before_sha256": null,
+      "after_sha256": "026fff0ef933501b594ed039025aae02bb1dfbae454a6d55eebedba4be4f5225"
+    },
+    "backend/open_webui/utils/main_unified_login.py": {
+      "before_sha256": null,
+      "after_sha256": "f2d99fd943012ece84ce3b6ca1d41da7d067c889b2499c628cba22054dbe764f"
+    }
+  }
+}

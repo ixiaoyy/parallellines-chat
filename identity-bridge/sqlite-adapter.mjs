@@ -211,6 +211,17 @@ export function createSqliteStore({ directory, filename = 'oidc.sqlite', clock =
         .get(grantId, clock() / 1000);
       return row && row.sub === grant.accountId ? Object.freeze({ ...row }) : undefined;
     },
+    /** 只让独立 RP 复核自己签发的绑定；未知/过期不暴露其他客户端主体。 */
+    getClientBinding(bindingId, expectedClientId) {
+      if (!validId(bindingId) || !allowedClientIds.has(expectedClientId)) return undefined;
+      const rows = db.prepare(`SELECT b.grant_id FROM oidc_grant_bindings b
+        WHERE b.binding_id=? AND b.auth_expires_at>? LIMIT 16`).all(bindingId, clock() / 1000);
+      for (const row of rows) {
+        const identity = store.getGrantBinding(row.grant_id, expectedClientId);
+        if (identity) return identity;
+      }
+      return undefined;
+    },
     revokeGrant(grantId) {
       if (!validId(grantId)) return;
       transaction(() => revokeGrantWithinTransaction(grantId));

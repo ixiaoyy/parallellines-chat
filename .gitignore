@@ -14,6 +14,7 @@ logs/
 *.jwks.json
 node_modules/
 .build/
+.tmp/
 dist/
 __pycache__/
 openwebui-profile-overlay/frontend-build/

@@ -1,0 +1,28 @@
+{
+  "upstream_commit": "f7ac7ee10962ddec0017f5c29b6740d9b9c5faca",
+  "feature_order": [
+    "frontend-performance",
+    "frontend-bootstrap",
+    "frontend-auth-recovery"
+  ],
+  "files": {
+    "src/lib/apis/index.ts": {
+      "before_sha256": "bf6bf8075d863e80ab21bed8629ffe2943940ac04d8bb95343046938056e1b9f",
+      "after_sha256": "9c2ac41b0072cf866f14a131f163a897cb190928a2a85107d46e2097bc79ba97"
+    },
+    "src/lib/apis/main-oauth-auth-recovery.mjs": {
+      "before_sha256": null,
+      "after_sha256": "1023349a6c281d260670b8de60bde6224240beeabe2ce31aff93cf83725c0185"
+    }
+  },
+  "backend": {
+    "routers/openai.py": {
+      "before_sha256": "09ec4460e0059c32c504e04306d0107abea7552999c669b3732a5ea1135ae7a4",
+      "after_sha256": "47b558e0b1fa49b1561f0f821241bbefb3c12330d610cc788b58e8ddeab50cdc"
+    },
+    "utils/main_model_auth.py": {
+      "before_sha256": null,
+      "after_sha256": "262adabb8f70a74074da5e2a030b9065e2c6db5680b90e0610b5f30888b7bcae"
+    }
+  }
+}

@@ -2,6 +2,7 @@ import Provider, { interactionPolicy, errors } from 'oidc-provider';
 import { createMainBridge, MainAuthorityError } from './main-bridge.mjs';
 import { renderLoginFailure } from './error-page.mjs';
 import { requireMainProfile } from './main-profile.mjs';
+import { createRelyingPartySessions } from './rp-session.mjs';
 
 const now = () => Math.floor(Date.now() / 1000);
 const interactionIdPattern = /^[A-Za-z0-9_-]{8,128}$/;
@@ -73,6 +74,7 @@ export function createIdentityProvider({ config, store, fetchImpl }) {
     throw new Error('invalid_registered_clients');
   }
   const bridge = createMainBridge({ apiRoot: config.apiRoot, bridgeSecret: config.bridgeSecret, fetchImpl });
+  const relyingPartySessions = createRelyingPartySessions({ config, store, bridge });
   const policy = interactionPolicy.base();
   // The OP session can never silently stand in for the browser's current Main identity.
   policy.get('login').checks.add(new interactionPolicy.Check(
@@ -113,7 +115,7 @@ export function createIdentityProvider({ config, store, fetchImpl }) {
     // Pinned oidc-provider 9.13.2 accepts only S256; every registered client requires it.
     pkce: { required: () => true },
     scopes: ['openid', 'profile', 'email', 'offline_access'],
-    claims: { openid: ['sub', 'pl_binding', 'pl_auth_exp', 'iss', 'aud'], profile: ['name', 'preferred_username', 'pl_role'], email: ['email', 'email_verified'] },
+    claims: { openid: ['sub', 'pl_binding', 'pl_auth_exp', ...(config.unifiedAuthEnabled ? ['pl_unified_browser'] : []), 'iss', 'aud'], profile: ['name', 'preferred_username', 'pl_role'], email: ['email', 'email_verified'] },
     // 保留两个现有客户端的 ID-token 资料声明形状。
     conformIdTokenClaims: false,
     // 新 Chat 仍须原生 offline-access 同意；New API 的注册不允许刷新。
@@ -157,6 +159,8 @@ export function createIdentityProvider({ config, store, fetchImpl }) {
             }
             // 仅向已开启资料同步的受信客户端发布当前主站角色；不改变 Chat 本身权限。
             return { ...claims, iss: config.issuer, aud: issuedClientId,
+              // 新统一 Web 只能接受由中央 Cookie 审批产生的绑定；旧绑定不自动升级。
+              ...(config.unifiedAuthEnabled ? { pl_unified_browser: state.unified_browser === true } : {}),
               ...(profileSync && state.role !== undefined ? { pl_role: state.role } : {}) };
           },
         };
@@ -184,6 +188,7 @@ export function createIdentityProvider({ config, store, fetchImpl }) {
     // There is one configured external authority; never derive public URLs from caller forwarding headers.
     req.headers['x-forwarded-proto'] = new URL(config.issuer).protocol.slice(0, -1);
     req.headers['x-forwarded-host'] = new URL(config.issuer).host;
+    if (await relyingPartySessions(req, res, requested)) return;
     if (req.method === 'POST' && requested.pathname === publicPrefix + '/interaction/finish') {
       if (req.headers.origin !== config.mainOrigin) return reply(res, 403, 'origin_rejected');
       let grantId;

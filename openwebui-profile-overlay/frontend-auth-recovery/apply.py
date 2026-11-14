@@ -5,10 +5,12 @@ from pathlib import Path
 
 UPSTREAM_COMMIT = 'f7ac7ee10962ddec0017f5c29b6740d9b9c5faca'
 INDEX_SHA256 = '5a4962e03abfaa25e169c065ea6fffc51ea6cc1cb7e70056be032ff7c9f2e6bf'
+BOOTSTRAP_INDEX_SHA256 = 'bf6bf8075d863e80ab21bed8629ffe2943940ac04d8bb95343046938056e1b9f'
 MODULE_NAME = 'main-oauth-auth-recovery.mjs'
 
 
 def patch(source):
+    """只改 getModels 的响应通知和导入，保留启动补丁的 signal 与取消合同。"""
     imports = "import { getOpenAIModelsDirect } from './openai';\n"
     if source.count(imports) != 1:
         raise ValueError('Unexpected frontend imports')
@@ -46,11 +48,12 @@ def patch(source):
 
 
 def apply(root, check=False):
+    """接受原始或已发布 performance/bootstrap 基线；重复或未知内容拒绝写入。"""
     index = root / 'src/lib/apis/index.ts'
     module = index.parent / MODULE_NAME
     content = index.read_bytes()
-    if hashlib.sha256(content).hexdigest() != INDEX_SHA256:
-        raise ValueError('Frontend differs from pinned upstream; refusing patch')
+    if hashlib.sha256(content).hexdigest() not in (INDEX_SHA256, BOOTSTRAP_INDEX_SHA256):
+        raise ValueError('Frontend differs from reviewed baselines; refusing patch')
     if module.exists():
         raise ValueError('Recovery module already exists; refusing overwrite')
     patched = patch(content.decode('utf-8'))

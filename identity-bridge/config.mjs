@@ -52,6 +52,8 @@ export function loadConfiguration(env = process.env) {
     apiRoot: apiRoot.href.replace(/\/$/, ''),
     clients: Object.freeze(clients.map(Object.freeze)), cookieKeys, jwks,
     bridgeSecret: env.CHAT_SSO_BRIDGE_SECRET,
+    // 仅统一登录新端点使用显式开关，既有 OIDC 两客户端及普通授权策略不变。
+    unifiedAuthEnabled: env.UNIFIED_AUTH_ENABLED === 'true',
     databaseDirectory: path.dirname(databasePath), databaseFilename: path.basename(databasePath),
     host: env.HOST || '0.0.0.0', port, secureCookies: !local,
   });

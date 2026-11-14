@@ -1,0 +1,6 @@
+ARG CHAT_BASE_IMAGE
+FROM ${CHAT_BASE_IMAGE}
+# 仅在本次核对的完整镜像中加入静默恢复；保留所有既有授权/Responses/免费模型补丁。
+COPY apply_backend.py /tmp/apply_silent_recovery.py
+COPY main_model_silent_recovery.py /app/backend/open_webui/utils/main_model_silent_recovery.py
+RUN python /tmp/apply_silent_recovery.py /app/backend/open_webui && rm /tmp/apply_silent_recovery.py

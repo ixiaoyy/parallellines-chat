@@ -1,0 +1,6 @@
+# 只替换原发行方项目的同一服务；禁止两个进程共享同一 SQLite。
+services:
+  identity:
+    image: ${BRIDGE_UNIFIED_IMAGE:?Set the reviewed unified-login issuer image}
+    environment:
+      UNIFIED_AUTH_ENABLED: ${UNIFIED_AUTH_ENABLED:-false}

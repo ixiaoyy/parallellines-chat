@@ -538,6 +538,29 @@ test('two clients: real OIDC protocol and persisted Main binding isolation', asy
     });
 
 
+    await t.test('unified mode publishes explicit trusted UserInfo boolean without changing either RP audience', async () => {
+      config.unifiedAuthEnabled = true;
+      restart();
+      for (const client of clients) {
+        for (const unified_browser of [false, true]) {
+          const flow = await begin(client);
+          const approval = approve(flow, `unified-${client.clientId}-${unified_browser}`);
+          approval.identity.unified_browser = unified_browser;
+          const callback = await callbackAfterFinish(flow, await finish(flow, approval.code));
+          const tokens = await exchange({ ...flow, callback });
+          const response = await fetch(userinfoEndpoint, { headers: { Authorization: `Bearer ${tokens.access_token}` } });
+          assert.equal(response.status, 200);
+          const value = await response.json();
+          assert.equal(value.pl_unified_browser, unified_browser);
+          assert.equal(value.sub, approval.identity.sub);
+          assert.equal(value.aud, client.clientId);
+          assert.equal(value.pl_binding, approval.identity.binding_id);
+          assert.equal(value.pl_auth_exp, approval.identity.auth_expires_at);
+          assert.equal(store.getClientBinding(approval.identity.binding_id, client.clientId).sub, approval.identity.sub);
+          assert.equal(store.getClientBinding(approval.identity.binding_id, clients.find(value => value !== client).clientId), undefined);
+        }
+      }
+    });
   } finally {
     if (opServer) await close(opServer);
     await close(mainServer);

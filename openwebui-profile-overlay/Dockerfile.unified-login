@@ -1,0 +1,10 @@
+ARG CHAT_BASE_IMAGE
+FROM ${CHAT_BASE_IMAGE}
+# 基础镜像必须是已核 silent-recovery 完整镜像；不换 stock 上游、不重置数据库配置。
+COPY unified-login/ /tmp/unified-login/
+RUN python /tmp/unified-login/apply.py /app --backend-only && rm -r /tmp/unified-login
+# 前端由独立配方生成并核对来源；Pyodide 沿用基础镜像，私有 source map 不入镜像。
+COPY frontend-build/ /app/build/
+COPY frontend-build-manifest.json /app/frontend-performance-manifest.json
+COPY unified-login/start.sh /app/backend/unified-start.sh
+CMD ["bash", "/app/backend/unified-start.sh"]
