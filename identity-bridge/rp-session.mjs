@@ -19,8 +19,8 @@ export function createRelyingPartySessions({ config, store, bridge }) {
       const basic = Buffer.from(header.slice(6), 'base64').toString('utf8');
       const colon = basic.indexOf(':');
       if (colon < 1) throw new Error();
-      const id = decodeURIComponent(basic.slice(0, colon).replaceAll('+', ' '));
-      const secret = decodeURIComponent(basic.slice(colon + 1).replaceAll('+', ' '));
+      const id = basic.slice(0, colon);
+      const secret = basic.slice(colon + 1);
       client = clients.get(id);
       if (!client || !equalSecret(secret, client.clientSecret)) throw new Error();
     } catch { send(res, 401, { error: 'invalid_client' }); return true; }
