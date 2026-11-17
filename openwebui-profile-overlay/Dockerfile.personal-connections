@@ -1,0 +1,8 @@
+ARG CHAT_BASE_IMAGE
+FROM ${CHAT_BASE_IMAGE}
+# 必须接续本次 manifest 对应的统一登录完整镜像；不能用 stock 镜像替代。
+COPY personal-connections/apply.py personal-connections/backend.py personal-connections/credentials.py personal-connections/main_personal_connections.py personal-connections/audit.py personal-connections/manifest.json /tmp/personal-connections/
+RUN python /tmp/personal-connections/apply.py /app --backend-only && rm -r /tmp/personal-connections
+# 复用已有启动/后端依赖/Pyodide，只替换已核公开前端，不复制私有 source map。
+COPY frontend-build/ /app/build/
+COPY frontend-build-manifest.json /app/frontend-personal-connections-manifest.json

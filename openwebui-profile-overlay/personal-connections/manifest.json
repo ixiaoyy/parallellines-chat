@@ -1,0 +1,98 @@
+{
+  "upstream_version": "0.12.5",
+  "upstream_commit": "f7ac7ee10962ddec0017f5c29b6740d9b9c5faca",
+  "feature_order": [
+    "frontend-performance",
+    "frontend-bootstrap",
+    "frontend-auth-recovery",
+    "frontend-silent-recovery",
+    "unified-login",
+    "personal-connections"
+  ],
+  "files": {
+    "backend/open_webui/utils/task.py": {
+      "before_sha256": "5517a74570a88c14d9125e4fc43e53bd8d5c6f97c57125394791d8f4bb9a8c9e",
+      "after_sha256": "740399b77079b0a86eb9f342eebd7b7fd9d25a61b7cafc1d80fb4513ca54c99b"
+    },
+    "backend/open_webui/routers/tasks.py": {
+      "before_sha256": "9fa3d4b0b07dd80f0e31395c4cca9418a03f19acd74ca95d6fdc3a1ff37a7728",
+      "after_sha256": "7769ea7e2680c74413bbe2326331eb9aee3b70772c85390d9019a691b05f9e46"
+    },
+    "backend/open_webui/utils/chat.py": {
+      "before_sha256": "c51e789ac3eebfddabe60d3c1adcb40e00984ebbc348734776e6f7e47a190eb8",
+      "after_sha256": "4047389f5057bd843be92bf2922afc3be1730ac5161475715965ad97c86d96a5"
+    },
+    "backend/open_webui/utils/context_compaction.py": {
+      "before_sha256": "c9bb8e24b91c5b61777de7096f81463493ec155dc103117aa116e71f307a9dec",
+      "after_sha256": "1a710c42e12656d6e4b9e452589c0bf6f94ea3d21bb6721fc5aac094b2ba4fbd"
+    },
+    "backend/open_webui/utils/middleware.py": {
+      "before_sha256": "9fcfcdaa2d658d51dc7de11dac41710b7fbaa8258de70c00f10d74eb53ae2bf5",
+      "after_sha256": "cc921e85ba8ad28114a841c485b8450cbdfbf8c0115182b016ac2a4749ff0c0f"
+    },
+    "backend/open_webui/models/users.py": {
+      "before_sha256": "143e949b172252c45ae1cbe7d5f7bfc3460375fa49b203f4dbc36c6128d68bc3",
+      "after_sha256": "69235f14abc30ca98abac4dd801b731364970ea142ded472995305d59e57d2d0"
+    },
+    "backend/open_webui/routers/users.py": {
+      "before_sha256": "7f90d6ffa9d9914ae667439ba7af7b1a94615f8c6f34bcc8da969a0864cce687",
+      "after_sha256": "1e7172a89a8dbe9ff4fa92f397dbe4cff9c561c0bd694d6738fd0c4963e6a657"
+    },
+    "backend/open_webui/utils/main_personal_connections.py": {
+      "before_sha256": null,
+      "after_sha256": "e50cc9cdcfdd319b9600c9c8f2775800f7de816dcf4b852c2e1f3ae0b20998af"
+    },
+    "backend/open_webui/utils/audit.py": {
+      "before_sha256": "2f50935c2a1e8ee591945e8e4e0701685210ef75a3662cf9e97707b50bbe80c0",
+      "after_sha256": "02db34b7c41a8a7e1b3cbd83f298a77d4c1baccbcda66129046966a41e26946a"
+    },
+    "src/lib/components/AddConnectionModal.svelte": {
+      "before_sha256": "8f8635b07f37d208c57b4f817cec75298fbdeb33085ce7ba45f08b9bfb8f6963",
+      "after_sha256": "abd577394e7dbe4c205742e9f930d6734e2034646b17ccb7d41b21c5430025af"
+    },
+    "src/lib/components/chat/Settings/Connections.svelte": {
+      "before_sha256": "5e5d38d1adfb30f8e56cd19c0964fdaba4d1374abce19c95a137ba3cc0e21e9a",
+      "after_sha256": "9637faacbccb51a88bbc432061ade3b47311a61426c3b8d0f09f45926689af81"
+    },
+    "src/lib/components/chat/Settings/Connections/Connection.svelte": {
+      "before_sha256": "ec88d911a42855476eab537eb6566e2a9ffc439d970e261511e6ddafbbd4d3a2",
+      "after_sha256": "211fedd77754f071bbafe40ac9364999b9cf9afe094eb829feb6a3de34cd71d0"
+    },
+    "src/lib/i18n/locales/zh-CN/translation.json": {
+      "before_sha256": "1886b66ba07a1a7c425d0a6aa344d21a13dec5319adbfa3dfbb1370a2bc23a1f",
+      "after_sha256": "a8a96146d92808bf786cd10e34b1cfbe73e5bd49238694a8aa8e923617d3feee"
+    },
+    "src/lib/utils/personalConnectionUi.mjs": {
+      "before_sha256": null,
+      "after_sha256": "a52a20303922c152d877e2c67ca55341b346445192c1f3c1c70a473174c191ca"
+    },
+    "src/lib/apis/openai/index.ts": {
+      "before_sha256": "bc0f7cd4214eb9e65e006c52b98e92f9ae6b052396b0b447936eba74ee3e0c62",
+      "after_sha256": "b0821163fb4fe832401d4ef083f060f905d54c513ac33e5c30806effb690de7a"
+    },
+    "src/lib/apis/index.ts": {
+      "before_sha256": "a75e88686049f7ece7c9aab2c2e506d1cc753ff18688c76e93945493b0db83d7",
+      "after_sha256": "6bf8bf8b2356a8fbc9059fddb281065040edf6ad26cd39bc0d089da342a7374f"
+    },
+    "src/routes/+layout.svelte": {
+      "before_sha256": "f9bf89c5ca8ee36aa3713546a50c6a28ea5f87f670ddc92f8ad3766b23def970",
+      "after_sha256": "644e91985fd81dc7dd9b48ec9dabc846534066ce02a6474dcce7e151dc77f8cb"
+    },
+    "src/routes/(app)/+layout.svelte": {
+      "before_sha256": "5cdfefa6169b76b70525981ff5aa1ab483e97b2fad656d8627af06b6e49c3c0f",
+      "after_sha256": "a9092cbc16e7b1140d3773e03be0cad0a6ae0c8cca487d1c87b05a9f40dcdf31"
+    },
+    "src/lib/components/chat/Chat.svelte": {
+      "before_sha256": "7cf8c56e6420921bada744fec66bd0674dc3347ae43f989e216582cf34550e78",
+      "after_sha256": "fac1352ef7108cf81f86530c5aef904c7aa39e9dcb1ba43fe354f3a7a3b7d21e"
+    },
+    "src/lib/components/chat/SettingsModal.svelte": {
+      "before_sha256": "d592f69c6345eb9deb937850dcc6f97c9d1efefbf6c3ae6a13080447a402e27e",
+      "after_sha256": "c22ef95446050ae99315f8bd166daff3fe2944624e3e9bc5a78182521d4ddffa"
+    },
+    "src/lib/apis/personal-connections-runtime.mjs": {
+      "before_sha256": null,
+      "after_sha256": "b55525e9989b039ae72af6198f2183a702ec7a62c98b15f0f6b6bbc391d8a20a"
+    }
+  }
+}
