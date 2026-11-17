@@ -1,0 +1,63 @@
+{
+  "upstream_version": "0.12.5",
+  "upstream_commit": "f7ac7ee10962ddec0017f5c29b6740d9b9c5faca",
+  "feature_order": [
+    "frontend-performance",
+    "frontend-bootstrap",
+    "frontend-auth-recovery",
+    "frontend-silent-recovery",
+    "unified-login",
+    "personal-connections",
+    "frontend-i18n"
+  ],
+  "files": {
+    "src/lib/components/layout/GuestChatShell.svelte": {
+      "before_sha256": "026fff0ef933501b594ed039025aae02bb1dfbae454a6d55eebedba4be4f5225",
+      "after_sha256": "d1fa6fcbc4f63fa2332f765cf91418a4bf414a2dbcbf394055665634d350aa9e"
+    },
+    "src/lib/i18n/main-ui.ts": {
+      "before_sha256": null,
+      "after_sha256": "75bb41f901610ffd2bf73e30614c71dcdde7f82218f0a2ce996fae17bc29a7dc"
+    },
+    "src/lib/i18n/locales/en-US/translation.json": {
+      "before_sha256": "48c11d69dab79878e8c0a8abe212f99e8c70f1ca974ba8a1f1830b90f92010d0",
+      "after_sha256": "0a92681877f07cec2f0eedf54005992873261cf2527dc7d947ddccdc3e130949"
+    },
+    "src/lib/i18n/locales/zh-CN/translation.json": {
+      "before_sha256": "a8a96146d92808bf786cd10e34b1cfbe73e5bd49238694a8aa8e923617d3feee",
+      "after_sha256": "ad0473727b975301cc43fdc45467ba3030f0ea54cbe260cb0fae52bf75f96caa"
+    },
+    "src/lib/i18n/index.ts": {
+      "before_sha256": "8f3fff89d01b9e21e05c8706d6ac9f6bc9cd401ee59421976da5da88c7d842e1",
+      "after_sha256": "d7526923e3e8ab027612e7707e7c814d59eccbb826c55c6b008737866c01e505"
+    },
+    "src/lib/apis/main-oauth-auth-recovery.mjs": {
+      "before_sha256": "1023349a6c281d260670b8de60bde6224240beeabe2ce31aff93cf83725c0185",
+      "after_sha256": "db315ccc65e8afb5d087e9263db3924b301759704521db95d4929b6ab407172b"
+    },
+    "src/lib/apis/main-model-silent-recovery.mjs": {
+      "before_sha256": "834937099c88f155b425305d16580042516607c7495e5a3380bf94d0a1189896",
+      "after_sha256": "18606cedc5c6c879291a58deb9b031541c920da4b4739165d73de06dd3317e3a"
+    },
+    "src/lib/apis/index.ts": {
+      "before_sha256": "6bf8bf8b2356a8fbc9059fddb281065040edf6ad26cd39bc0d089da342a7374f",
+      "after_sha256": "8b550a71de770c69f3bc30d2ea5612e5bfdedf4101ba4aa208794e58958864cc"
+    },
+    "src/lib/apis/personal-connections-runtime.mjs": {
+      "before_sha256": "b55525e9989b039ae72af6198f2183a702ec7a62c98b15f0f6b6bbc391d8a20a",
+      "after_sha256": "8718dafebeb192b9a7732f74603711ddd7cbbcb69387b9b0470ed0b846dd560e"
+    },
+    "src/routes/+layout.svelte": {
+      "before_sha256": "644e91985fd81dc7dd9b48ec9dabc846534066ce02a6474dcce7e151dc77f8cb",
+      "after_sha256": "8e53a6f698537f3f0cc1a940b0c0f88fe1954dfd1b6123b0b97f9268d0602345"
+    },
+    "src/routes/(app)/+layout.svelte": {
+      "before_sha256": "a9092cbc16e7b1140d3773e03be0cad0a6ae0c8cca487d1c87b05a9f40dcdf31",
+      "after_sha256": "79c61da54e9e9478431196f3fd48785b25e970b40c984773a87e6017f0e5764d"
+    },
+    "src/routes/auth/+page.svelte": {
+      "before_sha256": "0de45a8cf771e4748edfe8d760e9409972cfed12ae230301e437ff3a729b6fbf",
+      "after_sha256": "5464588ee7dc5d25165a4d6ad548ef10c1895ec34faa869fd88a6fd284012c74"
+    }
+  }
+}

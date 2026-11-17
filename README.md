@@ -47,6 +47,12 @@ The opt-in `openrouter/free` Chat extension keeps the existing OAuth/Responses
 connection, paid models and defaults, and isolates free-chat background tasks.
 See [its preparation, activation and recovery contract](docs/openrouter-free-release.md).
 
+The optional [bilingual interface overlay](openwebui-profile-overlay/frontend-i18n/README.md)
+extends the complete personal-connections candidate with Chinese/English custom
+pages and messages while retaining all native languages. Its dedicated
+`deploy/build-i18n-frontend.mjs` entry prepares and builds an isolated source copy;
+it does not deploy Chat or change identity/model billing.
+
 ## Prepare a release
 
 Keep filled environment files, signing keys, runtime databases, and logs outside

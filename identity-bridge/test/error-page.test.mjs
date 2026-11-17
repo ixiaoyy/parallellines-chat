@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { renderLoginFailure } from '../error-page.mjs';
+import { renderLoginFailure, loginFailureLanguage, loginFailureTarget } from '../error-page.mjs';
 
 const MAIN_URL = 'https://pingxingxian.space/';
 const retryHref = html => html.match(/<a class="retry" href="([^"]+)"/)?.[1];
@@ -76,11 +76,34 @@ test('copy is neutral and the document provides semantic, responsive recovery co
   assert.match(html, /<main class="page">/);
   assert.match(html, /aria-labelledby="login-title" aria-describedby="login-description"/);
   assert.equal((html.match(/<h1\b/g) || []).length, 1);
-  assert.equal((html.match(/<a\b/g) || []).length, 2);
+  assert.equal((html.match(/<a\b/g) || []).length, 4);
   assert.match(html, /本次登录未能完成。你可以重新登录，或返回主站。/);
   assert.doesNotMatch(html, /过期|已失效|invalid_grant|approval_code|interaction_id|client_secret/);
   assert.match(html, /background: #409EFF;/);
   assert.match(html, /color: #ffffff;/);
   assert.match(html, /a:focus-visible/);
   assert.match(html, /prefers-reduced-motion/);
+});
+
+test('language choice is remembered and browser quality only selects supported display languages', () => {
+  assert.equal(loginFailureLanguage({ 'accept-language': 'en-GB,en;q=0.9,zh-CN;q=0.8' }), 'en-US');
+  assert.equal(loginFailureLanguage({ 'accept-language': 'en;q=0,zh-TW;q=0.9' }), 'zh-CN');
+  assert.equal(loginFailureLanguage({ 'accept-language': 'fr-FR' }), 'zh-CN');
+  assert.equal(loginFailureLanguage({ cookie: 'pl_oidc_locale=zh-CN', 'accept-language': 'en-US' }), 'zh-CN');
+  assert.equal(loginFailureLanguage({ cookie: 'pl_oidc_locale=zh-CN' }, 'en-US'), 'en-US');
+  assert.equal(loginFailureLanguage({ cookie: 'pl_oidc_locale=evil', 'accept-language': 'en-US' }, '<script>'), 'en-US');
+  const { html, csp } = renderLoginFailure('https://api.pingxingxian.space/login', 'en-US');
+  assert.match(html, /<html lang="en-US">/);
+  assert.match(html, /Sign-in did not complete/);
+  assert.match(html, /target=api&amp;lang=zh-CN/);
+  assert.doesNotMatch(html, /interaction_id|approval_code|<script\b/);
+  assert.equal(csp, renderLoginFailure(MAIN_URL).csp);
+});
+
+test('read-only error display never accepts arbitrary redirect targets or reflects language input', () => {
+  for (const input of [null, undefined, '__proto__', 'https://evil.invalid', '<script>', { toString() { throw new Error('coercion'); } }]) {
+    assert.equal(loginFailureTarget(input), MAIN_URL);
+    assert.deepEqual(renderLoginFailure(MAIN_URL, input), renderLoginFailure(MAIN_URL));
+  }
+  assert.equal(loginFailureTarget('chat'), 'https://chat.pingxingxian.space/oauth/oidc/login');
 });

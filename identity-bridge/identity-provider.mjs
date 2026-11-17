@@ -1,6 +1,6 @@
 import Provider, { interactionPolicy, errors } from 'oidc-provider';
 import { createMainBridge, MainAuthorityError } from './main-bridge.mjs';
-import { renderLoginFailure } from './error-page.mjs';
+import { renderLoginFailure, loginFailureLanguage, loginFailureTarget } from './error-page.mjs';
 import { requireMainProfile } from './main-profile.mjs';
 import { createRelyingPartySessions } from './rp-session.mjs';
 
@@ -26,7 +26,7 @@ function replyFinishFailure(req, res, code, retryUrl = '/') {
     return mime === 'text/html' && Number.isFinite(quality) && quality > 0 && quality <= 1;
   });
   if (!form || !html) return reply(res, 403, code);
-  const page = renderLoginFailure(retryUrl);
+  const page = renderLoginFailure(retryUrl, loginFailureLanguage(req.headers));
   res.writeHead(403, {
     'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store',
     'Referrer-Policy': 'no-referrer', 'X-Content-Type-Options': 'nosniff',
@@ -185,6 +185,17 @@ export function createIdentityProvider({ config, store, fetchImpl }) {
     if (requested.pathname !== publicPrefix && !requested.pathname.startsWith(publicPrefix + '/')) return reply(res, 404, 'not_found');
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('Referrer-Policy', 'no-referrer');
+    // 语言切换只展示固定恢复入口；不读取审批信息、交换身份或重新执行登录。
+    if (req.method === 'GET' && requested.pathname === publicPrefix + '/login-failure') {
+      const selected = requested.searchParams.get('lang');
+      const language = loginFailureLanguage(req.headers, selected);
+      const page = renderLoginFailure(loginFailureTarget(requested.searchParams.get('target')), language);
+      if (['zh-CN', 'en-US'].includes(selected)) res.setHeader('Set-Cookie',
+        `pl_oidc_locale=${language}; Path=${publicPrefix}; Max-Age=31536000; HttpOnly; SameSite=Lax${config.secureCookies ? '; Secure' : ''}`);
+      res.writeHead(403, { 'Content-Type': 'text/html; charset=utf-8', 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': page.csp });
+      res.end(page.html);
+      return;
+    }
     // There is one configured external authority; never derive public URLs from caller forwarding headers.
     req.headers['x-forwarded-proto'] = new URL(config.issuer).protocol.slice(0, -1);
     req.headers['x-forwarded-host'] = new URL(config.issuer).host;

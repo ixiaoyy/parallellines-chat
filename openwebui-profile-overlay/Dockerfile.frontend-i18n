@@ -1,0 +1,5 @@
+ARG CHAT_BASE_IMAGE
+FROM ${CHAT_BASE_IMAGE}
+# 只接续已核个人连接完整镜像；中英界面不替换后端、启动参数或持久数据。
+COPY frontend-build/ /app/build/
+COPY frontend-build-manifest.json /app/frontend-i18n-manifest.json

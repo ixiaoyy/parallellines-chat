@@ -1,12 +1,33 @@
 import { createHash } from 'node:crypto';
 
 const MAIN_URL = 'https://pingxingxian.space/';
-const RETRY_URLS = new Set([
-  MAIN_URL,
-  'https://chat.pingxingxian.space/auth',
-  'https://chat.pingxingxian.space/oauth/oidc/login',
-  'https://api.pingxingxian.space/login',
-]);
+const RECOVERY_TARGETS = { main: MAIN_URL, chat: 'https://chat.pingxingxian.space/oauth/oidc/login',
+  'chat-auth': 'https://chat.pingxingxian.space/auth', api: 'https://api.pingxingxian.space/login' };
+const RETRY_URLS = new Set(Object.values(RECOVERY_TARGETS));
+const COPY = {
+  'zh-CN': { site: '平行线', title: '聊天登录未完成', status: '登录提示', description: '本次登录未能完成。你可以重新登录，或返回主站。', retry: '重新登录', home: '返回平行线主站', language: '语言' },
+  'en-US': { site: 'ParallelLines', title: 'Sign-in did not complete', status: 'Sign-in notice', description: 'Sign-in could not be completed. You can sign in again or return to the main site.', retry: 'Sign in again', home: 'Back to ParallelLines', language: 'Language' },
+};
+
+/** 将固定展示目标转成重试 URL；未知值返回主站，不接收任意 redirect 或认证状态。 */
+export function loginFailureTarget(target) { return typeof target === 'string' && Object.hasOwn(RECOVERY_TARGETS, target) ? RECOVERY_TARGETS[target] : MAIN_URL; }
+
+/** 从显式中英代码、Cookie、Accept-Language 依次返回语言代码；无匹配保留中文默认。 */
+export function loginFailureLanguage(headers = {}, explicit) {
+  if (typeof explicit === 'string' && Object.hasOwn(COPY, explicit)) return explicit;
+  const stored = String(headers.cookie || '').match(/(?:^|;\s*)pl_oidc_locale=(zh-CN|en-US)(?:;|$)/)?.[1];
+  if (stored) return stored;
+  const candidates = String(headers['accept-language'] || '').slice(0, 2048).split(',').map((part, index) => {
+    const [code, ...parameters] = part.trim().split(';');
+    const quality = parameters.find(value => value.trim().startsWith('q='));
+    return { code, index, q: quality === undefined ? 1 : Number(quality.trim().slice(2)) };
+  }).filter(item => Number.isFinite(item.q) && item.q > 0 && item.q <= 1).sort((a, b) => b.q - a.q || a.index - b.index);
+  for (const { code } of candidates) {
+    if (/^en(?:-|$)/i.test(code)) return 'en-US';
+    if (/^zh(?:-|$)/i.test(code)) return 'zh-CN';
+  }
+  return 'zh-CN';
+}
 
 // Fixed bytes: the CSP hash applies to this exact stylesheet, including newlines.
 const STYLE = `
@@ -36,6 +57,9 @@ body { margin: 0; min-width: 0; }
   font-weight: 650;
   letter-spacing: .08em;
 }
+.language { display: flex; justify-content: flex-end; gap: 14px; margin-bottom: 16px; font-size: 14px; }
+.language a { color: #475569; text-underline-offset: 4px; min-height: 44px; display: inline-flex; align-items: center; }
+.language a[aria-current="true"] { font-weight: 700; color: #1e293b; }
 .card {
   padding: 36px;
   border: 1px solid #e2e8f0;
@@ -130,33 +154,39 @@ const STYLE_HASH = createHash('sha256').update(STYLE, 'utf8').digest('base64');
 const CSP = `default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; script-src 'none'; style-src 'sha256-${STYLE_HASH}'; object-src 'none'`;
 
 /** Render a self-contained recovery page; untrusted arguments are never reflected. */
-export function renderLoginFailure(retryUrl) {
+export function renderLoginFailure(retryUrl, language = 'zh-CN') {
   const safeRetry = typeof retryUrl === 'string' && RETRY_URLS.has(retryUrl) ? retryUrl : MAIN_URL;
+  const locale = typeof language === 'string' && Object.hasOwn(COPY, language) ? language : 'zh-CN';
+  const copy = COPY[locale];
+  const target = Object.keys(RECOVERY_TARGETS).find(key => RECOVERY_TARGETS[key] === safeRetry);
+  // 切换仅打开只读错误展示页，不重交审批码或重复原 POST。
+  const languageHref = code => `/auth/oidc/login-failure?target=${target}&amp;lang=${code}`;
   const html = `<!doctype html>
-<html lang="zh-CN">
+<html lang="${locale}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="referrer" content="no-referrer">
   <meta name="robots" content="noindex, nofollow">
-  <title>聊天登录未完成 · 平行线</title>
+  <title>${copy.title} · ${copy.site}</title>
   <style>${STYLE}</style>
 </head>
 <body>
   <main class="page">
     <div class="shell">
-      <p class="site-name">平行线</p>
+      <nav class="language" aria-label="${copy.language}"><a href="${languageHref('zh-CN')}" lang="zh-CN" aria-current="${locale === 'zh-CN'}">简体中文</a><a href="${languageHref('en-US')}" lang="en" aria-current="${locale === 'en-US'}">English</a></nav>
+      <p class="site-name">${copy.site}</p>
       <section class="card" aria-labelledby="login-title" aria-describedby="login-description">
         <div class="status">
           <span class="status-icon" aria-hidden="true">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5v5M12 16.5h.01"/></svg>
           </span>
-          <span>登录提示</span>
+          <span>${copy.status}</span>
         </div>
-        <h1 id="login-title">聊天登录未完成</h1>
-        <p class="description" id="login-description">本次登录未能完成。你可以重新登录，或返回主站。</p>
-        <a class="retry" href="${safeRetry}">重新登录<span aria-hidden="true">→</span></a>
-        <a class="home" href="${MAIN_URL}">返回平行线主站</a>
+        <h1 id="login-title">${copy.title}</h1>
+        <p class="description" id="login-description">${copy.description}</p>
+        <a class="retry" href="${safeRetry}">${copy.retry}<span aria-hidden="true">→</span></a>
+        <a class="home" href="${MAIN_URL}">${copy.home}</a>
       </section>
     </div>
   </main>
