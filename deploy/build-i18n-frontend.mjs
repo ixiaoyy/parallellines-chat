@@ -11,36 +11,42 @@ const sha = value => crypto.createHash('sha256').update(value).digest('hex');
 const fail = reason => { throw new Error(reason); };
 const source = path.resolve(process.argv[2] || '');
 const output = path.resolve(process.argv[3] || '');
-const prepared = process.argv[4] === '--prepared';
-if (![4, 5].includes(process.argv.length) || (process.argv.length === 5 && !prepared) || source === output || fs.existsSync(output)) fail('usage_or_output_exists_preserve_artifact');
-const names = ['frontend-performance', 'frontend-bootstrap', 'frontend-auth-recovery', 'frontend-silent-recovery', 'unified-login', 'personal-connections', 'frontend-i18n'];
+const flags = process.argv.slice(4);
+const prepared = flags.includes('--prepared');
+const chatRooms = flags.includes('--chat-rooms');
+if (process.argv.length < 4 || flags.length !== Number(prepared) + Number(chatRooms) || source === output || fs.existsSync(output)) fail('usage_or_output_exists_preserve_artifact');
+const names = ['frontend-performance', 'frontend-bootstrap', 'frontend-auth-recovery', 'frontend-silent-recovery', 'unified-login', 'personal-connections', 'frontend-i18n', ...(chatRooms ? ['frontend-chat-rooms'] : [])];
+const firstOverlay = names.indexOf('frontend-i18n');
 const expected = {};
 const baseline = {};
 const hashes = {};
-for (const name of names) {
+for (const [index, name] of names.entries()) {
   const bytes = fs.readFileSync(path.join(repository, 'openwebui-profile-overlay', name, 'manifest.json'));
   const manifest = JSON.parse(bytes);
   if (manifest.upstream_commit !== 'f7ac7ee10962ddec0017f5c29b6740d9b9c5faca') fail('upstream_changed');
   hashes[name] = sha(bytes);
   for (const [relative, value] of Object.entries(manifest.files)) {
     expected[relative] = value.after_sha256;
-    if (name !== 'frontend-i18n') baseline[relative] = value.after_sha256;
+    if (index < firstOverlay) baseline[relative] = value.after_sha256;
   }
   for (const [relative, value] of Object.entries(manifest.backend || {})) {
     expected['backend/open_webui/' + relative] = value.after_sha256;
     baseline['backend/open_webui/' + relative] = value.after_sha256;
   }
-  if (name === 'frontend-i18n' && JSON.stringify(manifest.feature_order) !== JSON.stringify(names)) fail('feature_order_changed');
+  if (index >= firstOverlay && JSON.stringify(manifest.feature_order) !== JSON.stringify(names.slice(0, index + 1))) fail('feature_order_changed');
 }
 if (!prepared) {
   for (const [relative, value] of Object.entries(baseline)) {
     if (sha(fs.readFileSync(path.join(source, relative))) !== value) fail('personal_source_changed:' + relative);
   }
-  // SOURCE 必须是可修改的隔离副本；先核对整套补丁，未知或半应用输入不写入。
-  const overlay = path.join(repository, 'openwebui-profile-overlay/frontend-i18n/apply.py');
-  for (const args of [[overlay, source, '--check'], [overlay, source]]) {
-    const result = spawnSync(process.env.PYTHON || 'python', args, { stdio: 'inherit', windowsHide: true, timeout: 30000 });
-    if (result.status !== 0) fail('i18n_preparation_failed');
+  // SOURCE 必须是可修改的隔离副本；每个增量核对自己的整套前像后才写入。
+  // 聊天频道仅在显式选用时接续完整中英界面，不影响原命令和旧候选。
+  for (const name of names.slice(firstOverlay)) {
+    const overlay = path.join(repository, 'openwebui-profile-overlay', name, 'apply.py');
+    for (const args of [[overlay, source, '--check'], [overlay, source]]) {
+      const result = spawnSync(process.env.PYTHON || 'python', args, { stdio: 'inherit', windowsHide: true, timeout: 30000 });
+      if (result.status !== 0) fail(`${name === 'frontend-i18n' ? 'i18n' : 'chat_rooms'}_preparation_failed`);
+    }
   }
 }
 for (const [relative, value] of Object.entries(expected)) {

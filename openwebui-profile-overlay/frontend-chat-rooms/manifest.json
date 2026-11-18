@@ -1,0 +1,32 @@
+{
+  "upstream_version": "0.12.5",
+  "upstream_commit": "f7ac7ee10962ddec0017f5c29b6740d9b9c5faca",
+  "feature_order": [
+    "frontend-performance",
+    "frontend-bootstrap",
+    "frontend-auth-recovery",
+    "frontend-silent-recovery",
+    "unified-login",
+    "personal-connections",
+    "frontend-i18n",
+    "frontend-chat-rooms"
+  ],
+  "files": {
+    "src/lib/components/layout/Sidebar.svelte": {
+      "before_sha256": "1e155a1e97d33d2feacba9b47464749fd52430332076ee550389292f1903a6f2",
+      "after_sha256": "13917d22817ba1eb889b4b316d5b5745fb7cd164a8ed17b78468e0efb6c713b2"
+    },
+    "src/lib/components/layout/Sidebar/ChatRoomsLink.svelte": {
+      "before_sha256": null,
+      "after_sha256": "2e623ef4e950a03a7fdfc4f3a4018eb2c98db99d15b868668981b4b2ec240f12"
+    },
+    "src/lib/i18n/locales/en-US/translation.json": {
+      "before_sha256": "0a92681877f07cec2f0eedf54005992873261cf2527dc7d947ddccdc3e130949",
+      "after_sha256": "05a0680f2b8e21b515b441f689192e66c8b94b5d96ee224ab0ec37ae971e15e4"
+    },
+    "src/lib/i18n/locales/zh-CN/translation.json": {
+      "before_sha256": "ad0473727b975301cc43fdc45467ba3030f0ea54cbe260cb0fae52bf75f96caa",
+      "after_sha256": "9adaca3cbc53059bda153902dd8051b0bd3795c99eea4a86e946c8ef6d962f4d"
+    }
+  }
+}
