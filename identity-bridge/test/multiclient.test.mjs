@@ -53,7 +53,7 @@ class Browser {
   }
 }
 
-test('two clients: real OIDC protocol and persisted Main binding isolation', async t => {
+test('three clients: real OIDC protocol and persisted Main binding isolation', async t => {
   const directory = await mkdtemp(path.join(os.tmpdir(), 'pl-multiclient-test-'));
   const bridgeSecret = secret();
   const approvals = new Map();
@@ -89,8 +89,9 @@ test('two clients: real OIDC protocol and persisted Main binding isolation', asy
     const clients = [
       { clientId: 'parallellines-openwebui', clientSecret: secret(), callbackUri: `${mainOrigin}/oauth/oidc/login/callback`, refreshEnabled: true },
       { clientId: 'parallellines-newapi', clientSecret: secret(), callbackUri: `${mainOrigin}/oauth/pingxingxian`, refreshEnabled: false },
+      { clientId: 'parallellines-tavern', clientSecret: secret(), callbackUri: `${mainOrigin}/_synapse/client/oidc/callback`, refreshEnabled: false, profileSyncEnabled: false },
     ];
-    const [chatClient, apiClient] = clients;
+    const [chatClient, apiClient, tavernClient] = clients;
     const { privateKey, publicKey } = await generateKeyPair('RS256', { extractable: true });
     const signing = { ...await exportJWK(privateKey), kid: 'synthetic-multiclient-key', use: 'sig', alg: 'RS256' };
     const publicKeys = createLocalJWKSet({ keys: [{ ...await exportJWK(publicKey), kid: signing.kid, use: 'sig', alg: 'RS256' }] });
@@ -263,17 +264,35 @@ test('two clients: real OIDC protocol and persisted Main binding isolation', asy
       }
     });
 
-    await t.test('Chat requires offline consent; NewAPI cannot obtain refresh even when it requests offline consent', async () => {
+    await t.test('Chat requires offline consent; NewAPI and Tavern cannot obtain refresh even with offline consent', async () => {
       for (const [client, options] of [
         [chatClient, { scope: 'openid profile' }],
         [chatClient, { prompt: '' }],
         [apiClient, { scope: 'openid profile offline_access', prompt: 'consent' }],
+        [tavernClient, { scope: 'openid profile offline_access', prompt: 'consent' }],
       ]) {
         const flow = await authorization(client, `no-offline-${secret()}`, options);
         const tokens = await exchange(flow);
         await assertClaims(tokens, flow);
         assert.equal(tokens.refresh_token, undefined);
         assert.equal(tokens.scope.split(' ').includes('offline_access'), false);
+      }
+    });
+
+    await t.test('Tavern signs in without verified email or profile-sync role, and keeps its Main subject', async () => {
+      chatClient.profileSyncEnabled = true;
+      apiClient.profileSyncEnabled = true;
+      try {
+        const flow = await authorization(tavernClient, 'tavern-unverified-main-user');
+        const tokens = await exchange(flow);
+        const claims = await assertClaims(tokens, flow);
+        assert.equal(claims.preferred_username, 'pl-tavern-unverified-main-user');
+        assert.equal(tokens.refresh_token, undefined);
+        assert.equal(tokens.scope.split(' ').includes('email'), false);
+        assert.equal(tokens.scope.split(' ').includes('offline_access'), false);
+      } finally {
+        chatClient.profileSyncEnabled = false;
+        apiClient.profileSyncEnabled = false;
       }
     });
 
@@ -307,7 +326,7 @@ test('two clients: real OIDC protocol and persisted Main binding isolation', asy
       const initialRefresh = await provider.RefreshToken.find(tokens.refresh_token);
       assert.equal(initialRefresh.clientId, chatClient.clientId);
       assert.ok(initialRefresh.exp <= flow.identity.auth_expires_at);
-      for (const client of [apiClient]) {
+      for (const client of [apiClient, tavernClient]) {
         await assertTokenRejected(await fetch(endpoint, {
           method: 'POST', redirect: 'error',
           headers: { Authorization: `Basic ${Buffer.from(`${client.clientId}:${client.clientSecret}`).toString('base64')}`, 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -356,9 +375,9 @@ test('two clients: real OIDC protocol and persisted Main binding isolation', asy
     });
 
     await t.test('each client rejects absent and plain PKCE, and another client callback before Main approval', async () => {
-      for (const [index, client] of clients.entries()) {
+      for (const client of clients) {
         for (const pkce of ['missing', 'plain']) assertAuthorizationRejected(await begin(client, { pkce }));
-        for (const redirectUri of [clients[(index + 1) % clients.length].callbackUri, `${client.callbackUri}/`, `${client.callbackUri}?extra=1`, 'https://untrusted.invalid/callback']) {
+        for (const redirectUri of [...clients.filter(other => other !== client).map(other => other.callbackUri), `${client.callbackUri}/`, `${client.callbackUri}?extra=1`, 'https://untrusted.invalid/callback']) {
           assertAuthorizationRejected(await begin(client, { redirectUri }));
         }
       }
@@ -370,8 +389,10 @@ test('two clients: real OIDC protocol and persisted Main binding isolation', asy
           const flow = await authorization(client, `pkce-user-${index}`);
           await assertTokenRejected(await rawExchange(flow, client, { code_verifier }));
         }
-        const crossed = await authorization(client, `crossed-user-${index}`);
-        await assertTokenRejected(await rawExchange(crossed, clients[(index + 1) % clients.length]));
+        for (const other of clients.filter(candidate => candidate !== client)) {
+          const crossed = await authorization(client, `crossed-user-${index}-${other.clientId}`);
+          await assertTokenRejected(await rawExchange(crossed, other));
+        }
         const redirect = await authorization(client, `redirect-user-${index}`);
         await assertTokenRejected(await rawExchange(redirect, client, { redirect_uri: clients[(index + 1) % clients.length].callbackUri }));
         const replay = await authorization(client, `replay-user-${index}`);
@@ -444,7 +465,7 @@ test('two clients: real OIDC protocol and persisted Main binding isolation', asy
       chatClient.profileSyncEnabled = true;
       apiClient.profileSyncEnabled = true;
       try {
-        for (const client of clients) {
+        for (const client of [chatClient, apiClient]) {
           const flow = await begin(client, { scope: 'openid profile email' });
           const approval = approve(flow, 'profile-sub');
           Object.assign(approval.identity, { username: 'original-user', name: 'Original',
@@ -477,7 +498,7 @@ test('two clients: real OIDC protocol and persisted Main binding isolation', asy
 
     await t.test('current Main role is UserInfo-only, profile-scoped and requires profile opt-in', async () => {
       try {
-        for (const client of clients) {
+        for (const client of [chatClient, apiClient]) {
           for (const role of ['user', 'moderator', 'admin']) {
             client.profileSyncEnabled = true;
             const flow = await begin(client, { scope: 'openid profile email' });
@@ -538,7 +559,7 @@ test('two clients: real OIDC protocol and persisted Main binding isolation', asy
     });
 
 
-    await t.test('unified mode publishes explicit trusted UserInfo boolean without changing either RP audience', async () => {
+    await t.test('unified mode publishes explicit trusted UserInfo boolean without changing any RP audience', async () => {
       config.unifiedAuthEnabled = true;
       restart();
       for (const client of clients) {

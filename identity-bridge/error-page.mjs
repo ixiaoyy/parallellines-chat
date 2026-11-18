@@ -2,7 +2,8 @@ import { createHash } from 'node:crypto';
 
 const MAIN_URL = 'https://pingxingxian.space/';
 const RECOVERY_TARGETS = { main: MAIN_URL, chat: 'https://chat.pingxingxian.space/oauth/oidc/login',
-  'chat-auth': 'https://chat.pingxingxian.space/auth', api: 'https://api.pingxingxian.space/login' };
+  'chat-auth': 'https://chat.pingxingxian.space/auth', api: 'https://api.pingxingxian.space/login',
+  tavern: 'https://tavern.pingxingxian.space/' };
 const RETRY_URLS = new Set(Object.values(RECOVERY_TARGETS));
 const COPY = {
   'zh-CN': { site: '平行线', title: '聊天登录未完成', status: '登录提示', description: '本次登录未能完成。你可以重新登录，或返回主站。', retry: '重新登录', home: '返回平行线主站', language: '语言' },

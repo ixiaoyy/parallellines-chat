@@ -5,17 +5,26 @@
 The existing main site must provide `/auth/chat`, its authenticated identity
 exchange/session API, and the `/auth/oidc` proxy route. This repository does not
 replace the main-site application. The bridge retains that service protocol and
-registers two exact callbacks; separate client secrets are required:
+registers the exact callbacks below; separate client secrets are required. Tavern
+is registered only when `TAVERN_OIDC_CLIENT_SECRET` is explicitly set:
 
 | Client | Callback | Refresh |
 | --- | --- | --- |
 | `parallellines-openwebui` | `https://chat.pingxingxian.space/oauth/oidc/login/callback` | enabled with offline consent |
 | `parallellines-newapi` | `https://api.pingxingxian.space/oauth/pingxingxian` | disabled |
+| `parallellines-tavern` | `https://matrix.pingxingxian.space/_synapse/client/oidc/callback` | disabled |
 
 All clients use `client_secret_basic` and PKCE S256. Do not weaken callback,
 state, subject, or client binding checks to work around a failed login. The API
 client needs the opt-in PKCE patch from ParallelLines-Api. This is OAuth/UserInfo
 for New API; it does not claim New API validates ID-token nonces.
+
+Tavern requests only `openid profile`, uses the stable Main `sub` for native
+Matrix identity binding, and does not inherit `OIDC_MAIN_PROFILE_SYNC_ENABLED`.
+It therefore does not require verified email or expose profile-sync roles. The
+existing two clients retain their current global profile-sync behavior. Release
+order, native device-verification limits and recovery are documented in
+[Tavern login release](tavern-sso-release.md).
 
 Chat requests `openid profile email offline_access` and native
 `OAUTH_AUTHORIZE_PARAMS={"prompt":"consent"}`. Offline scope and consent are
@@ -35,7 +44,7 @@ token signing and audiences are unchanged. `pl_auth_exp` is integer epoch second
 `pl_binding` is an opaque Main-session binding. The relay must accept only
 `aud=parallellines-openwebui`, never legacy or New API login access tokens.
 
-With profile synchronization enabled, the two registered clients can receive
+With profile synchronization enabled, the Chat and New API clients can receive
 UserInfo `pl_role` under `profile`. Its exact `user`/`moderator`/`admin` value is
 read from the current Main database through the authenticated session-state
 channel. Missing role in an older Main response is omitted, never defaulted;

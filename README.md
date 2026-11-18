@@ -18,7 +18,8 @@ recorded in `upstream.lock.json`. Read [NOTICE.md](NOTICE.md) for component term
 - `compose.yaml`: official Chat image, loopback-only port, data-disk bind mount,
   and native OIDC settings.
 - `identity-bridge/`: separately built main-site OIDC provider and tests, shared
-  by the new Chat and New API only. The retired LibreChat RP is not registered.
+  by Chat, New API, and the optional Tavern/Synapse client. The retired LibreChat
+  RP is not registered.
 - `compose.bridge.yaml`: integration reference for that existing issuer service.
 - `deploy/nginx-chat.conf`: additive vhost, including WebSocket and SSE support.
 - `docs/OPERATIONS.md`: account configuration, release, upgrade, and rollback.
@@ -29,6 +30,10 @@ Main-site credentials are entered only at the main site. Users select the
 **平行线账号** login button in Chat. Ordinary users default to `user`; administrator
 binding requires verification of the stable main-site subject and existing role.
 Email matching and Chat's automatic role elevation remain disabled.
+
+Tavern uses a separately opted-in native Synapse client and automatic Element
+SSO; it does not require a second product password or a verified-email profile.
+See [Tavern login release and recovery](docs/tavern-sso-release.md).
 
 **The deployment template defaults to model access disabled until the separate
 New API OAuth relay and per-user bindings are ready.** The live installation uses

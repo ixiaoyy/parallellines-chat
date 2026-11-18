@@ -44,6 +44,23 @@ test('production config fixes issuer/callback and requires private file rather t
       NEWAPI_OAUTH_CLIENT_SECRET: 'synthetic-newapi-'.repeat(3) });
     assert.equal(profile.clients[0].profileSyncEnabled, true);
     assert.equal(profile.clients[1].profileSyncEnabled, true);
+    const withTavern = loadConfiguration({ ...env, OIDC_MAIN_PROFILE_SYNC_ENABLED: 'true',
+      NEWAPI_OAUTH_CLIENT_SECRET: 'synthetic-newapi-'.repeat(3),
+      TAVERN_OIDC_CLIENT_SECRET: 'synthetic-tavern-'.repeat(3) });
+    assert.deepEqual(withTavern.clients.map(({ clientId, refreshEnabled, profileSyncEnabled }) =>
+      ({ clientId, refreshEnabled, profileSyncEnabled })), [
+      { clientId: 'parallellines-openwebui', refreshEnabled: true, profileSyncEnabled: true },
+      { clientId: 'parallellines-newapi', refreshEnabled: false, profileSyncEnabled: true },
+      { clientId: 'parallellines-tavern', refreshEnabled: false, profileSyncEnabled: false },
+    ]);
+    assert.equal(withTavern.clients[2].callbackUri, 'https://matrix.pingxingxian.space/_synapse/client/oidc/callback');
+    const onlyTavern = loadConfiguration({ ...shared, TAVERN_OIDC_CLIENT_SECRET: 'synthetic-tavern-'.repeat(3) });
+    assert.deepEqual(onlyTavern.clients.map(client => client.clientId), ['parallellines-tavern']);
+    for (const invalid of ['', 'short', env.OPENWEBUI_OIDC_CLIENT_SECRET]) {
+      assert.throws(() => loadConfiguration({ ...env, TAVERN_OIDC_CLIENT_SECRET: invalid }));
+    }
+    assert.throws(() => loadConfiguration({ ...shared,
+      NEWAPI_OAUTH_CLIENT_SECRET: 'same-secret-'.repeat(4), TAVERN_OIDC_CLIENT_SECRET: 'same-secret-'.repeat(4) }));
     assert.throws(() => loadConfiguration({ ...env, NEWAPI_OAUTH_CLIENT_SECRET: 'short' }));
     assert.throws(() => loadConfiguration({ ...env, OPENWEBUI_OIDC_CLIENT_SECRET: 'same-secret-'.repeat(4), NEWAPI_OAUTH_CLIENT_SECRET: 'same-secret-'.repeat(4) }));
     for (const invalid of [

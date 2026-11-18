@@ -6,12 +6,13 @@ import { renderLoginFailure, loginFailureLanguage, loginFailureTarget } from '..
 const MAIN_URL = 'https://pingxingxian.space/';
 const retryHref = html => html.match(/<a class="retry" href="([^"]+)"/)?.[1];
 
-test('recovery allows only the four explicit product entry points', () => {
+test('recovery allows only the five explicit product entry points', () => {
   for (const url of [
     MAIN_URL,
     'https://chat.pingxingxian.space/auth',
     'https://chat.pingxingxian.space/oauth/oidc/login',
     'https://api.pingxingxian.space/login',
+    'https://tavern.pingxingxian.space/',
   ]) {
     const { html } = renderLoginFailure(url);
     assert.equal(retryHref(html), url);
@@ -40,6 +41,9 @@ test('untrusted URLs and non-string inputs fall back without reflecting any inpu
     'https://chat.pingxingxian.space@evil.invalid/auth',
     'https://user:password@chat.pingxingxian.space/auth',
     'https://api.pingxingxian.space/admin',
+    'https://tavern.pingxingxian.space',
+    'https://tavern.pingxingxian.space/?redirect=https://evil.invalid',
+    'https://tavern.pingxingxian.space.evil.invalid/',
     'https://pingxingxian.space/chat',
     'https://pingxingxian.space/chat/',
     'https://pingxingxian.space/other',
@@ -106,4 +110,5 @@ test('read-only error display never accepts arbitrary redirect targets or reflec
     assert.deepEqual(renderLoginFailure(MAIN_URL, input), renderLoginFailure(MAIN_URL));
   }
   assert.equal(loginFailureTarget('chat'), 'https://chat.pingxingxian.space/oauth/oidc/login');
+  assert.equal(loginFailureTarget('tavern'), 'https://tavern.pingxingxian.space/');
 });

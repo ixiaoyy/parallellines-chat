@@ -60,14 +60,15 @@ async function finishBody(req) {
 /** Standard OIDC OP, backed exclusively by Main approval/session-state and durable grants. */
 export function createIdentityProvider({ config, store, fetchImpl }) {
   const registeredClients = config.clients;
-  // Main 服务协议与外部 RP 不是同一实体；这里只接受当前两个外部客户端。
+  // Main 服务协议与外部 RP 不是同一实体；这里只接受三个明确登记的外部客户端。
   if (!Array.isArray(registeredClients) || registeredClients.some(client =>
-    !['parallellines-openwebui', 'parallellines-newapi'].includes(client.clientId))) {
+    !['parallellines-openwebui', 'parallellines-newapi', 'parallellines-tavern'].includes(client.clientId))) {
     throw new Error('invalid_registered_clients');
   }
   const clientsById = new Map(registeredClients.map(client => [client.clientId, client]));
   const recoveryUrlFor = clientId => clientId === 'parallellines-openwebui' ? 'https://chat.pingxingxian.space/oauth/oidc/login' :
-    clientId === 'parallellines-newapi' ? 'https://api.pingxingxian.space/login' : config.mainOrigin + '/';
+    clientId === 'parallellines-newapi' ? 'https://api.pingxingxian.space/login' :
+    clientId === 'parallellines-tavern' ? 'https://tavern.pingxingxian.space/' : config.mainOrigin + '/';
   if (!registeredClients.length || clientsById.size !== registeredClients.length ||
       new Set(registeredClients.map(client => client.callbackUri)).size !== registeredClients.length ||
       new Set(registeredClients.map(client => client.clientSecret)).size !== registeredClients.length) {
@@ -118,7 +119,7 @@ export function createIdentityProvider({ config, store, fetchImpl }) {
     claims: { openid: ['sub', 'pl_binding', 'pl_auth_exp', ...(config.unifiedAuthEnabled ? ['pl_unified_browser'] : []), 'iss', 'aud'], profile: ['name', 'preferred_username', 'pl_role'], email: ['email', 'email_verified'] },
     // 保留两个现有客户端的 ID-token 资料声明形状。
     conformIdTokenClaims: false,
-    // 新 Chat 仍须原生 offline-access 同意；New API 的注册不允许刷新。
+    // 新 Chat 仍须原生 offline-access 同意；New API 和 Tavern 的注册不允许刷新。
     issueRefreshToken: (_ctx, client, source) => clientsById.get(client.clientId)?.refreshEnabled === true &&
       client.grantTypeAllowed('refresh_token') && source.scopes.has('openid') &&
       source.scopes.has('offline_access'),

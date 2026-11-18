@@ -38,13 +38,15 @@ export function loadConfiguration(env = process.env) {
   for (const [key, clientId, callbackUri] of [
     ['OPENWEBUI_OIDC_CLIENT_SECRET', 'parallellines-openwebui', 'https://chat.pingxingxian.space/oauth/oidc/login/callback'],
     ['NEWAPI_OAUTH_CLIENT_SECRET', 'parallellines-newapi', 'https://api.pingxingxian.space/oauth/pingxingxian'],
+    ['TAVERN_OIDC_CLIENT_SECRET', 'parallellines-tavern', 'https://matrix.pingxingxian.space/_synapse/client/oidc/callback'],
   ]) {
     if (env[key] === undefined) continue;
     if (typeof env[key] !== 'string' || env[key].length < 32 || clients.some(client => client.clientSecret === env[key])) {
       throw new Error('invalid_independent_client_secret');
     }
     clients.push({ clientId, clientSecret: env[key], callbackUri, refreshEnabled: clientId === 'parallellines-openwebui',
-      profileSyncEnabled: env.OIDC_MAIN_PROFILE_SYNC_ENABLED === 'true' });
+      // Tavern 只复用主站身份，不把现有两端的已验证邮箱同步门槛引入原生 Matrix 登录。
+      profileSyncEnabled: clientId !== 'parallellines-tavern' && env.OIDC_MAIN_PROFILE_SYNC_ENABLED === 'true' });
   }
   if (!clients.length) throw new Error('missing_oidc_client');
   return Object.freeze({
