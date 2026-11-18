@@ -12,6 +12,17 @@ node deploy/build-i18n-frontend.mjs ISOLATED_PERSONAL_SOURCE NEW_ARTIFACT --chat
 
 该选项先应用已核中英界面，再追加两个侧栏接点和中英文案。省略选项时，原中英构建和既有候选不变。若组合补丁已完整应用、只需重试构建，传新输出目录，并加 `--chat-rooms --prepared`。整套前后像与清单不一致时停止，不覆盖旧候选或已经准备好的产物。
 
-先使目标站的主站单点登录生效，再获准发布 Chat 入口。发布时核实当前 Chat 镜像与已有增量，从该镜像更新前端资源；不替换后端、数据或授权配置，不将私有 source map 打包公开。回退只恢复已记录的 Chat 前端版本，保留运行数据及此前已有的恢复、个人连接和其他功能。不为入口启动第二个身份桥。
+获准交付时，准备以下公开镜像上下文；只取本次构建的公开目录和清单，私有 source map 目录 `frontend-debug/` 留在构建端：
+
+```text
+.dockerignore                   # 构建入口产出
+Dockerfile.frontend-i18n        # 从同一已审 Chat 源码复制
+frontend-build-manifest.json    # 记录本次完整增量及公开文件
+frontend-build/
+```
+
+主站娱乐运维工作流的 `publish-tavern-frontend` 只接受已登记的构建产物和已核 Tavern 单点登录验收。它通过 `deploy/tavern-release-inputs.py` 验证构建来源、文件清单和字节；从当前 Chat 镜像派生，仅替换前端资源，不替换后端、Pyodide、数据或授权配置。
+
+`rollback-tavern-frontend` 只恢复已保存的 Chat 前一镜像与服务定义，保留运行数据及原有恢复、个人连接和其他功能，不回退 Tavern 或身份桥。接线参数、服务器目录和回退顺序见 [Tavern 固定运维动作](../../docs/tavern-sso-release.md#固定动作的输入)。
 
 本地浏览器夹具可验证两种侧栏、跳转和草稿；真实主站登录、设备验证及生产入口生效仍需获准发布后验收。
