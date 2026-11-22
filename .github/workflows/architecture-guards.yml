@@ -1,0 +1,33 @@
+name: Architecture Guards
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  architecture-guards:
+    name: Verify identity-bridge boundary and unified Chat overlay build guards
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Run boundary and overlay unit tests
+        run: >
+          node --test
+          identity-bridge/test/boundary.test.mjs
+          deploy/build-chat-frontend.test.mjs
+          openwebui-profile-overlay/frontend-chat-error-guidance/test_chat_error_guidance.mjs
+          openwebui-profile-overlay/frontend-model-capabilities/test_model_capabilities.mjs
+
+      - name: Dry-run 10-layer unified frontend manifest chain
+        run: node deploy/build-chat-frontend.mjs --extend frontend-chat-error-guidance,frontend-model-capabilities --dry-run
