@@ -1,0 +1,6 @@
+ARG CHAT_BASE_IMAGE
+ARG MANIFEST_TARGET=/app/frontend-chat-release-manifest.json
+FROM ${CHAT_BASE_IMAGE}
+# 统一 Chat 前端发布镜像入口：仅接续已核完整基线镜像，替换已验公开资产，不携带私有 source map。
+COPY frontend-build/ /app/build/
+COPY frontend-build-manifest.json ${MANIFEST_TARGET}

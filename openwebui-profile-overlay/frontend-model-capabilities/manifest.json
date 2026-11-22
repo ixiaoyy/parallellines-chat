@@ -1,0 +1,26 @@
+{
+  "upstream_version": "0.12.5",
+  "upstream_commit": "f7ac7ee10962ddec0017f5c29b6740d9b9c5faca",
+  "feature_order": [
+    "frontend-performance",
+    "frontend-bootstrap",
+    "frontend-auth-recovery",
+    "frontend-silent-recovery",
+    "unified-login",
+    "personal-connections",
+    "frontend-i18n",
+    "frontend-chat-rooms",
+    "frontend-chat-error-guidance",
+    "frontend-model-capabilities"
+  ],
+  "files": {
+    "src/lib/components/chat/MessageInput.svelte": {
+      "before_sha256": "b49bdbc4fffcf5613b94bff5b2aa8d0c21180805685cedb55dc1fa66355860b1",
+      "after_sha256": "8fbb79dc0d40e617667b158496cfbde09c579990a4b492b1eedcf6589eccf256"
+    },
+    "src/lib/apis/model-capabilities.mjs": {
+      "before_sha256": null,
+      "after_sha256": "f24c359b5c150d9f23f32e14d3c0a90be5f513803b86f9edaf577cc95f0697c6"
+    }
+  }
+}
