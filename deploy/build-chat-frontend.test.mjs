@@ -1,12 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
 	DEFAULT_FEATURE_ORDER,
 	UPSTREAM_COMMIT,
 	UPSTREAM_VERSION,
+	applyTrafficAnalyticsLoader,
 	parseCliArgs,
+	readTrafficLoaderBytes,
 	resolveFeatureChain,
 	loadOverlaySpecs,
 	runUnifiedFrontendBuild
@@ -57,5 +61,45 @@ test('dry-run succeeds against real repository manifests without invoking Vite',
 	assert.equal(summary.version, UPSTREAM_VERSION);
 	assert.equal(summary.upstream_commit, UPSTREAM_COMMIT);
 	assert.equal(summary.manifest_count, 8);
+	assert.equal(summary.traffic_analytics, false);
 	assert.ok(summary.tracked_files > 0);
+});
+
+test('unified build consolidates opt-in --traffic-analytics loader without ad-hoc Dockerfile', () => {
+	assert.equal(
+		fs.existsSync(path.join(REPO_ROOT, 'openwebui-profile-overlay', 'Dockerfile.traffic-analytics')),
+		false
+	);
+	const summary = runUnifiedFrontendBuild(['--dry-run', '--traffic-analytics'], REPO_ROOT);
+	assert.equal(summary.traffic_analytics, true);
+	assert.match(summary.traffic_loader_sha256, /^[a-f0-9]{64}$/);
+
+	const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'pl-chat-traffic-'));
+	try {
+		const staticDir = path.join(tmp, 'static');
+		fs.mkdirSync(staticDir, { recursive: true });
+		fs.writeFileSync(path.join(tmp, 'index.html'), '<script defer src="/static/loader.js"></script>\n');
+		fs.writeFileSync(path.join(staticDir, 'loader.js'), '');
+
+		// Disabled mode leaves the slot empty
+		assert.equal(applyTrafficAnalyticsLoader(tmp, REPO_ROOT, false), null);
+		assert.equal(fs.readFileSync(path.join(staticDir, 'loader.js'), 'utf8'), '');
+
+		// Enabled mode fills the empty slot with loader.js
+		const digest = applyTrafficAnalyticsLoader(tmp, REPO_ROOT, true);
+		assert.equal(digest, summary.traffic_loader_sha256);
+		assert.deepEqual(fs.readFileSync(path.join(staticDir, 'loader.js')), readTrafficLoaderBytes(REPO_ROOT));
+
+		// Idempotent re-apply succeeds
+		assert.equal(applyTrafficAnalyticsLoader(tmp, REPO_ROOT, true), digest);
+
+		// Foreign customization in slot is rejected
+		fs.writeFileSync(path.join(staticDir, 'loader.js'), '// custom\n');
+		assert.throws(
+			() => applyTrafficAnalyticsLoader(tmp, REPO_ROOT, true),
+			/native_loader_slot_not_empty_preserve_existing_customization/
+		);
+	} finally {
+		fs.rmSync(tmp, { recursive: true, force: true });
+	}
 });
