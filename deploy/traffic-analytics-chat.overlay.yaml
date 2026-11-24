@@ -1,0 +1,4 @@
+# 仅显式合入此覆盖层时选择派生镜像；基础 Compose 和旧镜像均保持原样。
+services:
+  openwebui:
+    image: ${CHAT_TRAFFIC_IMAGE:?Set the reviewed current-base traffic-loader image}
