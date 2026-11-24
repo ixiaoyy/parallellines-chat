@@ -18,13 +18,13 @@ const sourceDirectories = ['src', 'static', 'scripts', 'crypto/encryption'];
 const rootInputs = ['package.json', 'package-lock.json', 'vite.config.ts', 'svelte.config.js', 'postcss.config.js', 'tailwind.config.js', 'tsconfig.json'];
 class Uncacheable extends Error {}
 
-/** 旧 SOURCE OUT [bootstrap] 原样保留；只有显式 --cache-dir 才启用新的输入和缓存约束。 */
+/** 旧调用保持不变；auth-recovery 显式叠加已发布的 performance/bootstrap，再处理授权失效。 */
 export function parseBuildArguments(args) {
   const rest = args.slice(2);
-  const mode = rest[0] === 'bootstrap' ? (rest.shift(), 'bootstrap') : 'performance';
+  const mode = ['bootstrap', 'auth-recovery', 'silent-recovery'].includes(rest[0]) ? rest.shift() : 'performance';
   const valid = args.length >= 2 && (rest.length === 0 ||
     (rest.length === 2 && rest[0] === '--cache-dir' && rest[1].length > 0));
-  check(valid, 'usage: node deploy/build-performance-frontend.mjs PREPARED_SOURCE NEW_OUTPUT_DIRECTORY [bootstrap] [--cache-dir DIRECTORY]');
+  check(valid, 'usage: node deploy/build-performance-frontend.mjs PREPARED_SOURCE NEW_OUTPUT_DIRECTORY [bootstrap|auth-recovery|silent-recovery] [--cache-dir DIRECTORY]');
   return { mode, cacheDirectory: rest.length ? path.resolve(rest[1]) : null };
 }
 

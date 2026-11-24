@@ -4,14 +4,14 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from apply import INDEX_SHA256, MODULE_NAME, apply, patch
+from apply import INDEX_SHA256, BOOTSTRAP_INDEX_SHA256, MODULE_NAME, apply, patch
 
 
 class ApplyTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.original = Path(os.environ['OPENWEBUI_ORIGINAL_INDEX']).read_bytes()
-        assert hashlib.sha256(cls.original).hexdigest() == INDEX_SHA256
+        assert hashlib.sha256(cls.original).hexdigest() in (INDEX_SHA256, BOOTSTRAP_INDEX_SHA256)
 
     def make_checkout(self, directory):
         root = Path(directory)
@@ -34,6 +34,10 @@ class ApplyTests(unittest.TestCase):
             self.assertEqual((index.parent / MODULE_NAME).read_bytes(), (Path(__file__).parent / MODULE_NAME).read_bytes())
             self.assertEqual(updated.count('showMainOAuthAuthorizationRequired(res.status'), 1)
             self.assertIn('\t\t\tthrow responseError;\n', updated)
+            # 启动页的可取消请求和直接连接分支必须按已发布源码原样保留。
+            for text in ('signal?: AbortSignal', 'if (signal?.aborted) throw signal.reason;',
+                         'getOpenAIModelsDirect(url, OPENAI_API_KEYS[idx], signal)'):
+                self.assertEqual(updated.count(text), original.count(text), text)
             with self.assertRaises(ValueError):
                 apply(root)
 

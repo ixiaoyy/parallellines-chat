@@ -15,16 +15,19 @@ def _load(name):
     return module
 
 
-def prepare(root, backend_only=False):
-    """按已有分层准备补丁；root 为完整源码根，backend_only 同样不改变存储或服务。"""
+def prepare(root, backend_only=False, *, frontend_only=False):
+    """在隔离源码根按选定范围准备补丁文本；两个单侧模式互斥。"""
+    if backend_only and frontend_only:
+        raise ValueError('personal_overlay_modes_conflict')
     root = Path(root)
     result = {}
-    for name in ('backend', 'credentials', 'audit'):
-        for relative, source in _load(name).prepare(root / 'backend/open_webui').items():
-            path = 'backend/open_webui/' + relative
-            if path in result:
-                raise ValueError('personal_patch_owner_collision:' + path)
-            result[path] = source
+    if not frontend_only:
+        for name in ('backend', 'credentials', 'audit'):
+            for relative, source in _load(name).prepare(root / 'backend/open_webui').items():
+                path = 'backend/open_webui/' + relative
+                if path in result:
+                    raise ValueError('personal_patch_owner_collision:' + path)
+                result[path] = source
     if not backend_only:
         for name in ('frontend', 'runtime'):
             for path, source in _load(name).prepare(root).items():
@@ -34,11 +37,17 @@ def prepare(root, backend_only=False):
     return result
 
 
-def apply(root, check=False, backend_only=False):
-    """核对固定清单的前后字节，不接受重复应用、未知版本、路径逃逸或半套补丁。"""
+def apply(root, check=False, backend_only=False, *, frontend_only=False):
+    """校验并返回补丁路径；check 不写，frontend_only 不依赖后端前像。"""
+    if backend_only and frontend_only:
+        raise ValueError('personal_overlay_modes_conflict')
     root = Path(root).resolve(strict=True)
     manifest = json.loads((HERE / 'manifest.json').read_text(encoding='utf-8'))
-    files = {p: v for p, v in manifest['files'].items() if not backend_only or p.startswith('backend/')}
+    # 独立前端构建过滤输入检查；既有完整清单仍约束后续运行镜像的后端版本。
+    files = {
+        p: v for p, v in manifest['files'].items()
+        if (not backend_only or p.startswith('backend/')) and (not frontend_only or not p.startswith('backend/'))
+    }
     for relative, expected in files.items():
         path = root / relative
         if not path.resolve().is_relative_to(root) or path.is_symlink():
@@ -46,7 +55,7 @@ def apply(root, check=False, backend_only=False):
         digest = hashlib.sha256(path.read_bytes()).hexdigest() if path.exists() else None
         if digest != expected['before_sha256']:
             raise ValueError('personal_source_baseline_changed:' + relative)
-    prepared = prepare(root, backend_only)
+    prepared = prepare(root, backend_only, frontend_only=frontend_only)
     if set(prepared) != set(files):
         raise ValueError('personal_source_inventory_changed')
     for relative, source in prepared.items():
@@ -64,6 +73,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('root')
     parser.add_argument('--check', action='store_true')
-    parser.add_argument('--backend-only', action='store_true')
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument('--backend-only', action='store_true')
+    modes.add_argument('--frontend-only', action='store_true')
     args = parser.parse_args()
-    print(json.dumps(apply(args.root, args.check, args.backend_only)))
+    print(json.dumps(apply(args.root, args.check, args.backend_only, frontend_only=args.frontend_only)))

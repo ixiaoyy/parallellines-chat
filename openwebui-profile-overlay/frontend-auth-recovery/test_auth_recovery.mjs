@@ -104,14 +104,29 @@ test('actual getModels rethrows the original authorization JSON and keeps JWT re
 });
 
 test('actual getModels preserves unrelated HTTP and network failures without recovery toast', async () => {
-	const body = { detail: 'generic upstream failure' };
-	const http = modelClient({ ok: false, status: 500, json: async () => body });
-	await assert.rejects(http.getModels(), (error) => error === body);
-	assert.equal(http.records.shown.length, 0);
+	for (const status of [403, 429, 500, 503]) {
+		const body = { detail: { code: 'main_model_discovery_failed', message: 'generic upstream failure' } };
+		const http = modelClient({ ok: false, status, json: async () => body });
+		await assert.rejects(http.getModels(), (error) => error === body);
+		assert.equal(http.records.shown.length, 0);
+	}
 	const originalError = new Error('synthetic network error');
 	const network = modelClient(undefined, originalError);
 	await assert.rejects(network.getModels(), (error) => error === originalError);
 	assert.equal(network.records.shown.length, 0);
+});
+
+test('released bootstrap getModels preserves signal and cancellation reason', {
+	skip: !patchedSource.includes('signal?: AbortSignal')
+}, async () => {
+	const controller = new AbortController();
+	const reason = new Error('cancelled bootstrap request');
+	controller.abort(reason);
+	const client = modelClient(undefined, new Error('transport abort'));
+	await assert.rejects(client.getModels('synthetic-jwt', null, false, false, controller.signal),
+		(error) => error === reason);
+	assert.equal(client.requests[0][1].signal, controller.signal);
+	assert.deepEqual(client.records, { shown: [], dismissed: [], navigations: [] });
 });
 
 test('actual getModels returns success unchanged and dismisses only the recovery toast', async () => {

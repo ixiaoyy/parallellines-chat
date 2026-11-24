@@ -1,8 +1,79 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 
 const sha = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
+const MAX_FILES = 12_000;
+const MAX_PUBLIC_BYTES = 512 * 1024 * 1024;
+const MAX_ASSET_BYTES = 128 * 1024 * 1024;
+const MAX_MANIFEST_BYTES = 2 * 1024 * 1024;
+const isRecord = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+
+function validPublicPath(relative) {
+  // 保留许可证、字体及 Wasm 等公开资源，只排除不安全路径和不应随制品交付的文件。
+  const parts = relative.toLowerCase().split('/');
+  return !/[\\:\u0000-\u001f\u007f]/u.test(relative) &&
+    parts.every(part => part && !part.startsWith('.') && !/[ .]$/.test(part) &&
+      !['pyodide', 'frontend-debug', 'backend', 'node_modules', 'secrets', 'data', 'logs'].includes(part)) &&
+    !/(?:\.map(?:\.(?:gz|br))?|\.(?:env|pem|key|sqlite\w*|db|py)|\.jwks\.json)$/i.test(relative);
+}
+
+function readPublicFile(file, limit) {
+  const info = fs.lstatSync(file);
+  if (!info.isFile() || info.nlink !== 1 || info.size > limit) throw new Error('frontend_public_file_invalid');
+  return fs.readFileSync(file);
+}
+
+/** 用调用方提供的叠加层来源只读验证公开清单和资源树，不读取私有调试输出或复制文件。 */
+export function verifyPublicFrontend({ publicDirectory, manifestPath, metadata }) {
+  const manifest = JSON.parse(readPublicFile(manifestPath, MAX_MANIFEST_BYTES).toString('utf8'));
+  if (!isRecord(manifest) || !isRecord(manifest.files)) throw new Error('frontend_public_manifest_invalid');
+  const { files, ...actualMetadata } = manifest;
+  if (!isDeepStrictEqual(actualMetadata, metadata)) throw new Error('frontend_public_manifest_source_changed');
+  const names = Object.keys(files);
+  if (!Object.hasOwn(files, 'index.html') || names.length > MAX_FILES ||
+      !fs.lstatSync(publicDirectory).isDirectory()) {
+    throw new Error('frontend_public_inventory_invalid');
+  }
+
+  const directories = new Set();
+  const foldedNames = new Set();
+  for (const name of names) {
+    const folded = name.toLowerCase();
+    if (!validPublicPath(name) || foldedNames.has(folded) ||
+        typeof files[name] !== 'string' || !/^[a-f0-9]{64}$/.test(files[name])) {
+      throw new Error('frontend_public_path_or_hash_invalid');
+    }
+    foldedNames.add(folded);
+    for (let parent = path.posix.dirname(name); parent !== '.' && !directories.has(parent);
+      parent = path.posix.dirname(parent)) directories.add(parent);
+  }
+
+  let fileCount = 0;
+  let publicBytes = 0;
+  function inspect(relative = '') {
+    for (const entry of fs.readdirSync(path.join(publicDirectory, relative), { withFileTypes: true })) {
+      const child = relative ? `${relative}/${entry.name}` : entry.name;
+      if (entry.isDirectory() && directories.has(child)) {
+        inspect(child);
+      } else if (entry.isFile() && Object.hasOwn(files, child)) {
+        const bytes = readPublicFile(path.join(publicDirectory, child), MAX_ASSET_BYTES);
+        if (sha(bytes) !== files[child] || (child === 'index.html' && bytes.length === 0)) {
+          throw new Error('frontend_public_asset_changed');
+        }
+        publicBytes += bytes.length;
+        if (publicBytes > MAX_PUBLIC_BYTES) throw new Error('frontend_public_bytes_exceeded');
+        fileCount += 1;
+      } else {
+        throw new Error('unexpected_frontend_public_asset');
+      }
+    }
+  }
+  inspect();
+  if (fileCount !== names.length) throw new Error('frontend_public_asset_missing');
+  return { fileCount, publicBytes };
+}
 
 /**
  * 将 built 中的生成前端拆成 publicDirectory 与私有 debugDirectory，不改生成文件字节。

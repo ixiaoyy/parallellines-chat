@@ -32,8 +32,12 @@ function fixture(t, mode = 'bootstrap') {
 test('old default and bootstrap CLI forms remain valid; cache is explicit and modes stay distinct', () => {
   assert.deepEqual(parseBuildArguments(['SOURCE', 'OUT']), { mode: 'performance', cacheDirectory: null });
   assert.deepEqual(parseBuildArguments(['SOURCE', 'OUT', 'bootstrap']), { mode: 'bootstrap', cacheDirectory: null });
+  assert.deepEqual(parseBuildArguments(['SOURCE', 'OUT', 'auth-recovery']), { mode: 'auth-recovery', cacheDirectory: null });
+  assert.deepEqual(parseBuildArguments(['SOURCE', 'OUT', 'silent-recovery']), { mode: 'silent-recovery', cacheDirectory: null });
   assert.equal(parseBuildArguments(['SOURCE', 'OUT', '--cache-dir', 'CACHE']).mode, 'performance');
   assert.equal(parseBuildArguments(['SOURCE', 'OUT', 'bootstrap', '--cache-dir', 'CACHE']).mode, 'bootstrap');
+  assert.equal(parseBuildArguments(['SOURCE', 'OUT', 'auth-recovery', '--cache-dir', 'CACHE']).mode, 'auth-recovery');
+  assert.equal(parseBuildArguments(['SOURCE', 'OUT', 'silent-recovery', '--cache-dir', 'CACHE']).mode, 'silent-recovery');
   for (const args of [[], ['SOURCE'], ['SOURCE', 'OUT', 'unknown'], ['SOURCE', 'OUT', '--cache-dir']]) assert.throws(() => parseBuildArguments(args), /usage:/);
 });
 

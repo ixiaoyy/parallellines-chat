@@ -60,6 +60,10 @@ it does not deploy Chat or change identity/model billing.
 
 ## Prepare a release
 
+For a frontend-only CI artifact, use the separate [frontend bundle workflow and
+verification contract](docs/chat-frontend-bundle.md). It does not replace or
+invoke the existing personal-connections deployment.
+
 Keep filled environment files, signing keys, runtime databases, and logs outside
 the checkout under restricted server-only `/data` paths. Copy the example values
 into those files only after choosing the deployment scope. Never run Compose

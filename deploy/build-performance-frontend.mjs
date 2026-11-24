@@ -20,32 +20,68 @@ const manifest = JSON.parse(fs.readFileSync(path.join(feature, 'manifest.json'),
 const patchHash = sha(fs.readFileSync(path.join(feature, 'frontend-performance.patch')));
 // 第二批必须明确选择并核对顺序；旧入口继续只接受第一批源码，不能混用旧前端冒充新结果。
 const bootstrapFeature = path.join(repository, 'openwebui-profile-overlay/frontend-bootstrap');
-const bootstrapManifest = options.mode === 'bootstrap'
+const bootstrapManifest = ['bootstrap', 'auth-recovery', 'silent-recovery'].includes(options.mode)
   ? JSON.parse(fs.readFileSync(path.join(bootstrapFeature, 'manifest.json'), 'utf8')) : null;
+const authFeature = path.join(repository, 'openwebui-profile-overlay/frontend-auth-recovery');
+const authManifest = ['auth-recovery', 'silent-recovery'].includes(options.mode)
+  ? JSON.parse(fs.readFileSync(path.join(authFeature, 'manifest.json'), 'utf8')) : null;
+const silentFeature = path.join(repository, 'openwebui-profile-overlay/frontend-silent-recovery');
+const silentManifest = options.mode === 'silent-recovery'
+  ? JSON.parse(fs.readFileSync(path.join(silentFeature, 'manifest.json'), 'utf8')) : null;
 if (bootstrapManifest) {
   check(bootstrapManifest.requires_performance_patch_sha256 === patchHash, 'bootstrap_performance_prerequisite_changed');
   check(bootstrapManifest.upstream_commit === manifest.upstream_commit, 'bootstrap_upstream_changed');
 }
 for (const [relative, expected] of Object.entries(manifest.files)) {
-  const outputHash = bootstrapManifest?.files[relative]?.after_sha256 ?? expected.after_sha256;
+  const outputHash = silentManifest?.files[relative]?.after_sha256 ?? authManifest?.files[relative]?.after_sha256 ?? bootstrapManifest?.files[relative]?.after_sha256 ?? expected.after_sha256;
   check(sha(fs.readFileSync(path.join(source, relative))) === outputHash, 'performance_source_changed:' + relative);
 }
 if (bootstrapManifest) {
   for (const [relative, expected] of Object.entries(bootstrapManifest.files)) {
-    check(sha(fs.readFileSync(path.join(source, relative))) === expected.after_sha256, 'bootstrap_source_changed:' + relative);
+    check(sha(fs.readFileSync(path.join(source, relative))) === (silentManifest?.files[relative]?.after_sha256 ?? authManifest?.files[relative]?.after_sha256 ?? expected.after_sha256), 'bootstrap_source_changed:' + relative);
+  }
+}
+if (authManifest) {
+  // 只接纳以当前已发布 bootstrap 为前置的授权补丁，防止丢失弱网恢复和旧请求取消行为。
+  check(authManifest.upstream_commit === manifest.upstream_commit, 'auth_upstream_changed');
+  check(JSON.stringify(authManifest.feature_order) === JSON.stringify(['frontend-performance', 'frontend-bootstrap', 'frontend-auth-recovery']), 'auth_feature_order_changed');
+  for (const [relative, expected] of Object.entries(authManifest.files)) {
+    const before = bootstrapManifest.files[relative]?.after_sha256 ?? manifest.files[relative]?.after_sha256 ?? null;
+    check(expected.before_sha256 === before, 'auth_source_prerequisite_changed:' + relative);
+    check(sha(fs.readFileSync(path.join(source, relative))) === (silentManifest?.files[relative]?.after_sha256 ?? expected.after_sha256), 'auth_source_changed:' + relative);
+  }
+}
+if (silentManifest) {
+  // 静默恢复只能叠在已发布手动恢复之上，旧构建入口不接纳新前置条件或错误基线。
+  check(silentManifest.upstream_commit === manifest.upstream_commit, 'silent_upstream_changed');
+  check(JSON.stringify(silentManifest.feature_order) === JSON.stringify([...authManifest.feature_order, 'frontend-silent-recovery']), 'silent_feature_order_changed');
+  for (const [relative, expected] of Object.entries(silentManifest.files)) {
+    const before = authManifest.files[relative]?.after_sha256 ?? bootstrapManifest.files[relative]?.after_sha256 ?? manifest.files[relative]?.after_sha256 ?? null;
+    check(expected.before_sha256 === before, 'silent_source_prerequisite_changed:' + relative);
+    check(sha(fs.readFileSync(path.join(source, relative))) === expected.after_sha256, 'silent_source_changed:' + relative);
   }
 }
 const version = JSON.parse(fs.readFileSync(path.join(source, 'package.json'), 'utf8')).version;
 check(version === '0.12.5', 'upstream_version_changed');
 const bootstrapHash = bootstrapManifest ? sha(fs.readFileSync(path.join(bootstrapFeature, 'frontend-bootstrap.patch'))) : null;
 const bootstrapManifestHash = bootstrapManifest ? sha(fs.readFileSync(path.join(bootstrapFeature, 'manifest.json'))) : null;
-const buildHash = bootstrapManifest ? sha(JSON.stringify([patchHash, bootstrapHash, bootstrapManifestHash])) : patchHash;
+const authPatchHash = authManifest ? sha(fs.readFileSync(path.join(authFeature, 'frontend-auth-recovery.patch'))) : null;
+const authManifestHash = authManifest ? sha(fs.readFileSync(path.join(authFeature, 'manifest.json'))) : null;
+const silentPatchHash = silentManifest ? sha(fs.readFileSync(path.join(silentFeature, 'frontend-silent-recovery.patch'))) : null;
+const silentManifestHash = silentManifest ? sha(fs.readFileSync(path.join(silentFeature, 'manifest.json'))) : null;
+const buildHash = silentManifest ? sha(JSON.stringify([patchHash, bootstrapHash, bootstrapManifestHash, authPatchHash, authManifestHash, silentPatchHash, silentManifestHash]))
+  : authManifest ? sha(JSON.stringify([patchHash, bootstrapHash, bootstrapManifestHash, authPatchHash, authManifestHash]))
+  : bootstrapManifest ? sha(JSON.stringify([patchHash, bootstrapHash, bootstrapManifestHash])) : patchHash;
 const heap = Number(process.env.FRONTEND_BUILD_HEAP_MB ?? 12288);
 check(Number.isInteger(heap) && heap >= 1024 && heap <= 12288, 'invalid_build_heap_limit');
 const env = { ...process.env, npm_package_version: version, APP_BUILD_HASH: buildHash, APP_BUILD_CHANNEL: 'unknown' };
 const metadata = { upstream_commit: manifest.upstream_commit, performance_patch_sha256: patchHash, preserved_runtime: ['pyodide/'],
   ...(bootstrapManifest ? { bootstrap_patch_sha256: bootstrapHash, bootstrap_manifest_sha256: bootstrapManifestHash,
-    feature_order: ['frontend-performance', 'frontend-bootstrap'] } : {}) };
+    feature_order: ['frontend-performance', 'frontend-bootstrap'] } : {}),
+  ...(authManifest ? { auth_recovery_patch_sha256: authPatchHash, auth_recovery_manifest_sha256: authManifestHash,
+    feature_order: authManifest.feature_order } : {}),
+  ...(silentManifest ? { silent_recovery_patch_sha256: silentPatchHash, silent_recovery_manifest_sha256: silentManifestHash,
+    feature_order: silentManifest.feature_order } : {}) };
 const timing = {};
 let assessed = null;
 let packaged = null;

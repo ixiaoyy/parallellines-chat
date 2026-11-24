@@ -228,19 +228,24 @@ NEW_FILES = {'src/lib/apis/main-unified-browser.mjs': 'main-unified-browser.mjs'
              'backend/open_webui/utils/main_unified_login.py': 'main_unified_login.py'}
 
 
-def prepare(root, backend_only=False):
-    """先读完所有受影响文件及前置 manifest，全部验证后才允许写隔离源。"""
+def prepare(root, backend_only=False, *, frontend_only=False):
+    """按选定范围准备并核对补丁字节；两个单侧模式互斥。"""
+    if backend_only and frontend_only:
+        raise ValueError('unified_overlay_modes_conflict')
     manifest = json.loads((HERE / 'manifest.json').read_text())
     result = {}
     for relative, patch in PATCHERS.items():
-        if backend_only and not relative.startswith('backend/'):
+        # 独立前端构建只核 Web 前像；部署所需的后端版本仍由原清单声明。
+        is_backend = relative.startswith('backend/')
+        if (backend_only and not is_backend) or (frontend_only and is_backend):
             continue
         content = (root / relative).read_bytes()
         if hashlib.sha256(content).hexdigest() != manifest['files'][relative]['before_sha256']:
             raise ValueError('unified_source_baseline_changed:' + relative)
         result[relative] = patch(content.decode()).encode()
     for relative, own in NEW_FILES.items():
-        if backend_only and not relative.startswith('backend/'):
+        is_backend = relative.startswith('backend/')
+        if (backend_only and not is_backend) or (frontend_only and is_backend):
             continue
         if (root / relative).exists():
             raise ValueError('unified_new_file_collision:' + relative)
@@ -252,9 +257,9 @@ def prepare(root, backend_only=False):
     return result
 
 
-def apply(root, check=False, backend_only=False):
-    """仅隔离源码应用；--check 不写，不安装依赖、不读取运行环境或执行迁移。"""
-    prepared = prepare(root, backend_only)
+def apply(root, check=False, backend_only=False, *, frontend_only=False):
+    """返回隔离源码的补丁字节；check 不写，frontend_only 不读写后端前像。"""
+    prepared = prepare(root, backend_only, frontend_only=frontend_only)
     if not check:
         for relative, content in prepared.items():
             path = root / relative
@@ -267,6 +272,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('root', type=Path)
     parser.add_argument('--check', action='store_true')
-    parser.add_argument('--backend-only', action='store_true')
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument('--backend-only', action='store_true')
+    modes.add_argument('--frontend-only', action='store_true')
     args = parser.parse_args()
-    apply(args.root, args.check, args.backend_only)
+    apply(args.root, args.check, args.backend_only, frontend_only=args.frontend_only)

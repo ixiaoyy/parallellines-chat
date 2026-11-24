@@ -21,10 +21,12 @@ class ApplyContract(unittest.TestCase):
             raise unittest.SkipTest('OPENWEBUI_SILENT_BASELINE must name the explicit prepared local source')
         cls.baseline = Path(root).resolve(strict=True)
 
-    def fixture(self):
+    def fixture(self, *, frontend_only=False):
         temporary = tempfile.TemporaryDirectory(prefix='pl-unified-overlay-'); self.addCleanup(temporary.cleanup)
         root = Path(temporary.name)
         for relative in overlay.PATCHERS:
+            if frontend_only and relative.startswith('backend/'):
+                continue
             target = root/relative; target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes((self.baseline/relative).read_bytes())
         return root
@@ -79,9 +81,25 @@ class ApplyContract(unittest.TestCase):
 
     def test_backend_only_recipe_never_requires_or_writes_frontend(self):
         root = self.fixture()
-        output = overlay.apply(root, backend_only=True)
+        output = overlay.apply(root, False, True)
         self.assertTrue(all(relative.startswith('backend/') for relative in output))
         self.assertEqual((root/'src/routes/+layout.svelte').read_bytes(), (self.baseline/'src/routes/+layout.svelte').read_bytes())
+
+    def test_frontend_only_is_read_only_on_check_and_never_needs_backend_baseline(self):
+        root = self.fixture(frontend_only=True)
+        manifest = json.loads((HERE/'manifest.json').read_text(encoding='utf-8'))
+        expected = {path: record for path, record in manifest['files'].items() if not path.startswith('backend/')}
+        before = {path: (root/path).read_bytes() for path in expected if (root/path).is_file()}
+        self.assertEqual(set(overlay.apply(root, check=True, frontend_only=True)), set(expected))
+        self.assertEqual({path: (root/path).read_bytes() for path in expected if (root/path).is_file()}, before)
+        self.assertEqual(set(overlay.apply(root, frontend_only=True)), set(expected))
+        self.assertFalse((root/'backend').exists())
+        for path, record in expected.items():
+            self.assertEqual(hashlib.sha256((root/path).read_bytes()).hexdigest(), record['after_sha256'])
+
+    def test_frontend_only_and_backend_only_are_mutually_exclusive(self):
+        with self.assertRaisesRegex(ValueError, 'unified_overlay_modes_conflict'):
+            overlay.apply(Path('unused'), False, True, frontend_only=True)
 
     def test_guest_copy_is_normal_controls_not_implementation_instructions(self):
         guest = (HERE/'GuestChatShell.svelte').read_text(encoding='utf-8')

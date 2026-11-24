@@ -1,0 +1,106 @@
+name: 'CI: Build Chat frontend bundle'
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bundle:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+      FRONTEND_BUILD_HEAP_MB: '8192'
+    steps:
+      - name: Check out the reviewed Chat commit
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+
+      - name: Resolve the locked official upstream source
+        id: upstream
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          import re
+          lock = json.loads(Path("upstream.lock.json").read_text(encoding="utf-8"))
+          if lock["repository"] != "https://github.com/open-webui/open-webui" or not re.fullmatch(r"[0-9a-f]{40}", lock["commit"]):
+              raise SystemExit("invalid official Chat source lock")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
+              out.write(f"commit={lock['commit']}\n")
+          PY
+
+      - name: Check out only the pinned upstream commit
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: open-webui/open-webui
+          ref: ${{ steps.upstream.outputs.commit }}
+          path: .build/locked-openwebui
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22.14.0'
+          cache: npm
+          cache-dependency-path: .build/locked-openwebui/package-lock.json
+
+      - name: Verify both commits and the original dependency lock
+        env:
+          UPSTREAM_CHECKOUT: ${{ steps.upstream.outputs.commit }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git -C .build/locked-openwebui rev-parse HEAD)" = "$UPSTREAM_CHECKOUT"
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import { UPSTREAM_COMMIT, verifyUpstreamPackage } from './deploy/build-chat-frontend.mjs';
+          assert.equal(process.env.UPSTREAM_CHECKOUT, UPSTREAM_COMMIT);
+          verifyUpstreamPackage('.build/locked-openwebui');
+          NODE
+
+      - name: Install only the locked frontend dependencies
+        working-directory: .build/locked-openwebui
+        timeout-minutes: 12
+        run: npm ci --force --ignore-scripts --prefer-offline --no-audit --no-fund
+
+      - name: Build the reviewed ten-layer browser assets
+        run: |
+          set -euo pipefail
+          # 纯前端模式不应用后端；直接走统一入口，不执行会下载 Pyodide 的 npm build。
+          ORDER="$(node --input-type=module -e "import { RELEASE_FEATURE_ORDER } from './deploy/build-chat-frontend.mjs'; console.log(RELEASE_FEATURE_ORDER.join(','));")"
+          node deploy/build-chat-frontend.mjs .build/locked-openwebui "$RUNNER_TEMP/chat-frontend-build" \
+            --frontend-only --features "$ORDER"
+
+      - name: Verify the original public build without copying it
+        run: node deploy/build-chat-frontend.mjs --verify-public "$RUNNER_TEMP/chat-frontend-build"
+
+      - name: Upload the verified bundle as an Actions artifact
+        id: bundle
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: chat-frontend-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          # 直接上传原输出，只允许公开资产和清单；不传私有调试目录。
+          path: |
+            ${{ runner.temp }}/chat-frontend-build/frontend-build/
+            ${{ runner.temp }}/chat-frontend-build/frontend-build-manifest.json
+          include-hidden-files: false
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Record the artifact identity
+        env:
+          ARTIFACT_ID: ${{ steps.bundle.outputs.artifact-id }}
+          ARTIFACT_DIGEST: ${{ steps.bundle.outputs.artifact-digest }}
+        run: |
+          printf 'Chat frontend only\n\n- Commit: `%s`\n- Artifact ID: `%s`\n- Actions artifact SHA-256: `%s`\n' \
+            "$GITHUB_SHA" "$ARTIFACT_ID" "$ARTIFACT_DIGEST" >> "$GITHUB_STEP_SUMMARY"
