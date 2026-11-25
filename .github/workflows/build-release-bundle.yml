@@ -2,6 +2,12 @@ name: 'CI: Build Chat frontend bundle'
 
 on:
   workflow_dispatch:
+    inputs:
+      traffic_analytics:
+        description: Enable first-party cross-site traffic analytics loader (--traffic-analytics)
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -78,11 +84,21 @@ jobs:
           set -euo pipefail
           # 纯前端模式不应用后端；直接走统一入口，不执行会下载 Pyodide 的 npm build。
           ORDER="$(node --input-type=module -e "import { RELEASE_FEATURE_ORDER } from './deploy/build-chat-frontend.mjs'; console.log(RELEASE_FEATURE_ORDER.join(','));")"
+          EXTRA_ARGS=()
+          if [ "${{ inputs.traffic_analytics }}" = "true" ]; then
+            EXTRA_ARGS+=(--traffic-analytics)
+          fi
           node deploy/build-chat-frontend.mjs .build/locked-openwebui "$RUNNER_TEMP/chat-frontend-build" \
-            --frontend-only --features "$ORDER"
+            --frontend-only --features "$ORDER" "${EXTRA_ARGS[@]}"
 
       - name: Verify the original public build without copying it
-        run: node deploy/build-chat-frontend.mjs --verify-public "$RUNNER_TEMP/chat-frontend-build"
+        run: |
+          set -euo pipefail
+          EXTRA_ARGS=()
+          if [ "${{ inputs.traffic_analytics }}" = "true" ]; then
+            EXTRA_ARGS+=(--traffic-analytics)
+          fi
+          node deploy/build-chat-frontend.mjs --verify-public "$RUNNER_TEMP/chat-frontend-build" "${EXTRA_ARGS[@]}"
 
       - name: Upload the verified bundle as an Actions artifact
         id: bundle
